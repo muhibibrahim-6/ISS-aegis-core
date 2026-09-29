@@ -8,7 +8,6 @@ from flask import Flask, jsonify, request, render_template_string, Response, red
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# PostgreSQL লাইব্রেরি সেফ ইমপোর্ট
 try:
     import psycopg2
 except ImportError:
@@ -38,6 +37,7 @@ def init_db():
     if conn:
         try:
             cursor = conn.cursor()
+            # কাস্টমার টেবিল তৈরি
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS customers (
                     api_key TEXT PRIMARY KEY,
@@ -50,6 +50,13 @@ def init_db():
                     origin_ip TEXT
                 )
             ''')
+            
+            # নিরাপত্তার জন্য যদি টেবিল আগে থেকেই থাকে কিন্তু কলামগুলো না থাকে, তবে তা যুক্ত করে নেবে
+            cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS username TEXT;")
+            cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS email TEXT;")
+            cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS password TEXT;")
+            
+            # সিকিউরিটি লগ টেবিল
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS security_logs (
                     id SERIAL PRIMARY KEY,
@@ -63,6 +70,7 @@ def init_db():
             ''')
             conn.commit()
             
+            # ডিফল্ট অ্যাডমিন বা টেস্ট কাস্টমার ইনসার্ট
             cursor.execute("SELECT COUNT(*) FROM customers")
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
@@ -82,7 +90,6 @@ except Exception as e:
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
 
-# আপনার নির্দিষ্ট অ্যাডমিন ক্রিপডেনশিয়াল
 ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
@@ -215,14 +222,18 @@ def aegis_firewall_middleware():
         }), 403
 
 # --- Reverse Proxy Route ---
-@app.route('/proxy/<client_domain>/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def reverse_proxy(client_domain, subpath):
+@app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def reverse_proxy(full_path):
+    parts = full_path.split('/', 1)
+    client_domain = parts[0]
+    subpath = parts[1] if len(parts) > 1 else ""
+
     origin_url = None
     try:
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT origin_ip FROM customers WHERE domain = %s", (client_domain,))
+            cursor.execute("SELECT origin_ip FROM customers WHERE domain ILIKE %s OR domain ILIKE %s", (client_domain, f"%{client_domain}%"))
             row = cursor.fetchone()
             if row:
                 origin_url = row[0]
@@ -232,9 +243,9 @@ def reverse_proxy(client_domain, subpath):
         print("Proxy DB Error:", e)
 
     if not origin_url:
-        return jsonify({"error": "Target Client Domain Not Registered in Aegis Core"}), 404
+        return jsonify({"error": f"Target Client Domain '{client_domain}' Not Registered in Aegis Core"}), 404
         
-    target_url = f"{origin_url}/{subpath}"
+    target_url = f"{origin_url.rstrip('/')}/{subpath}"
     try:
         resp = requests.request(
             method=request.method,
@@ -328,6 +339,7 @@ def admin_dashboard():
         return redirect(url_for('admin_login'))
     
     success_msg = None
+    error_msg = None
     if request.method == 'POST':
         client_name = request.form.get('client_name')
         username = request.form.get('username')
@@ -351,7 +363,7 @@ def admin_dashboard():
                 conn.close()
                 success_msg = f"Client {client_name} added successfully!"
         except Exception as e:
-            success_msg = f"Error: {e}"
+            error_msg = f"Database Error: {e}"
 
     customers = []
     try:
@@ -383,6 +395,9 @@ def admin_dashboard():
             {% if success_msg %}
             <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded-lg text-sm">{{ success_msg }}</div>
             {% endif %}
+            {% if error_msg %}
+            <div class="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg text-sm">{{ error_msg }}</div>
+            {% endif %}
             
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client</h2>
@@ -393,7 +408,7 @@ def admin_dashboard():
                     <input type="password" name="password" placeholder="Client Password" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="domain" placeholder="domain.com" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="api_key" placeholder="API Key (e.g. aegis_key_123)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="origin_ip" placeholder="Origin Server (http://IP:Port)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="origin_ip" placeholder="Origin URL (https://site.com)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                         <option>Starter</option>
                         <option>Pro</option>
@@ -435,7 +450,7 @@ def admin_dashboard():
         </main>
     </body>
     </html>
-    """, success_msg=success_msg, customers=customers)
+    """, success_msg=success_msg, error_msg=error_msg, customers=customers)
 
 @app.route('/admin/logout')
 def admin_logout():
