@@ -3,26 +3,26 @@ from advanced_firewall import aegis_advanced_firewall
 
 app = Flask(__name__)
 
-# সার্ভারে যেকোনো রিকোয়েস্ট ঢোকার আগেই Aegis WAF ফায়ারওয়াল চেক করবে
+# Aegis Core WAF Middleware সক্রিয় করা
 app.before_request(aegis_advanced_firewall)
 
 @app.route('/')
-def home():
+def firewall_home():
     return jsonify({
-        "status": "online",
-        "system": "ISS CyberDefense Suite",
-        "protection": "Aegis Core WAF Active",
-        "message": "Welcome to ISS-Sentinel & Aegis Core platform."
+        "product": "Aegis Core Firewall & WAF",
+        "organization": "International System Security (ISS)",
+        "status": "Active & Protecting",
+        "version": "1.0.0"
     })
 
-@app.route('/login', methods=['POST'])
-def login():
-    # ইউজার ইনপুট বা ফর্ম ডাটা এখানে রিসিভ হবে এবং ফায়ারওয়াল তা প্রটেক্ট করবে
+@app.route('/api/protect', methods=['POST'])
+def protect_endpoint():
+    # এটি ক্লায়েন্টদের অ্যাপ্লিকেশনের প্রটেকশন এপিআই এন্ডপয়েন্ট হতে পারে
     data = request.get_json(silent=True) or request.form.to_dict()
     return jsonify({
-        "status": "success",
-        "message": "Request passed through Aegis Core WAF safely.",
-        "received_data": data
+        "status": "secure",
+        "message": "Payload verified and passed safely through Aegis Core WAF.",
+        "data": data
     })
 
 if __name__ == '__main__':
