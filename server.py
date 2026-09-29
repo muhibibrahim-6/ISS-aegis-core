@@ -2,31 +2,79 @@ import os
 import time
 import re
 import requests
-from collections import defaultdict
+import psycopg2
+from urllib.parse import urlparse
 from flask import Flask, jsonify, request, render_template_string, Response
 
 app = Flask(__name__)
 
-# --- 1. Configuration & Storage ---
-# ডিসকর্ড ওয়েবহুক ইউআরএল (এখানে আপনার ডিসকর্ড চ্যানেলের ওয়েবহুক লিংক বসাবেন)
-DISCORD_WEBHOOK_URL = "YOUR_DISCORD_WEBHOOK_URL_HERE"
+# --- 1. Database Configuration (PostgreSQL) ---
+# রেন্ডার বা যেকোনো এক্সটার্নাল পোস্টগ্র্রেএস ডাটাবেজ URL এখানে এনভায়রনমেন্ট ভ্যারিয়েবল হিসেবে নেওয়া হবে
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# রেজিস্টার্ড কাস্টমার বা ক্লায়েন্ট ডাটাবেজ
-CUSTOMERS = {
-    "aegis_live_key_999": {"client_name": "Acme Corp", "domain": "acme.com", "plan": "Enterprise"},
-    "aegis_live_key_123": {"client_name": "CyberShop", "domain": "cybershop.bd", "plan": "Pro"}
-}
+def get_db_connection():
+    if not DATABASE_URL:
+        return None
+    url = urlparse(DATABASE_URL)
+    conn = psycopg2.connect(
+        database=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port
+    )
+    return conn
 
-# কাস্টমারদের রিয়েল সার্ভার ম্যাপিং (রিভার্স প্রক্সির জন্য)
-ORIGIN_SERVER_MAP = {
-    "acme.com": "http://192.168.1.50:8000",
-}
+def init_db():
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        # কাস্টমার টেবিল তৈরি
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                api_key TEXT PRIMARY KEY,
+                client_name TEXT,
+                domain TEXT,
+                plan TEXT
+            )
+        ''')
+        # সিকিউরিটি লগ টেবিল তৈরি
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS security_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TEXT,
+                ip TEXT,
+                path TEXT,
+                threat TEXT,
+                ai_patch TEXT
+            )
+        ''')
+        conn.commit()
+        
+        # ডিফল্ট একটি টেস্ট কাস্টমার ইনসার্ট করা (যদি টেবিলে ডেটা না থাকে)
+        cursor.execute("SELECT COUNT(*) FROM customers")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "INSERT INTO customers (api_key, client_name, domain, plan) VALUES (%s, %s, %s, %s)",
+                ("aegis_live_key_999", "Acme Corp", "acme.com", "Enterprise")
+            )
+            conn.commit()
+        cursor.close()
+        conn.close()
+
+# অ্যাপ স্টার্ট হওয়ার সময় ডেটাবেজ টেবিল ইনিশিয়ালাইজ করা
+try:
+    init_db()
+except Exception as e:
+    print("Database initialization skipped or failed:", e)
+
+# ডিসকর্ড ওয়েবহুক ইউআরএল
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
 
 request_history = defaultdict(list)
+from collections import defaultdict
 BLOCKED_IPS = set()
 blocked_until = {}
-SECURITY_LOGS = []
-
 BLOCK_DURATION = 300
 
 SQLI_PATTERNS = [
@@ -78,7 +126,7 @@ def analyze_payload(text):
 
 def send_discord_alert(threat_data):
     if "YOUR_DISCORD_WEBHOOK_URL" in DISCORD_WEBHOOK_URL:
-        return  # লিংক সেট না থাকলে এড়িয়ে যাবে
+        return
     payload = {
         "content": f"🚨 **Aegis Core WAF Alert!**\n"
                    f"• **Threat:** {threat_data['threat']}\n"
@@ -98,7 +146,6 @@ def aegis_firewall_middleware():
     current_time = time.time()
     path = request.path
     
-    # ড্যাশবোর্ড, লগ এপিআই এবং স্ট্যাটিক রুটগুলোকে ফায়ারওয়াল চেকিং থেকে মুক্ত রাখা
     if path == '/' or path == '/api/v1/security/logs' or path.startswith('/proxy/'):
         return
         
@@ -122,16 +169,31 @@ def aegis_firewall_middleware():
         blocked_until[client_ip] = current_time + BLOCK_DURATION
         patch_advice = generate_ai_patch_advice(threat_type)
         
+        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time))
+        
         log_entry = {
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time)),
+            "timestamp": timestamp_str,
             "ip": client_ip,
             "path": path,
             "threat": threat_type,
             "ai_patch_advisor": patch_advice
         }
-        SECURITY_LOGS.insert(0, log_entry)
         
-        # ডিসকর্ডে নোটিফিকেশন পাঠানো
+        # ডেটাবেজে লগ সেভ করা
+        try:
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO security_logs (timestamp, ip, path, threat, ai_patch) VALUES (%s, %s, %s, %s, %s)",
+                    (timestamp_str, client_ip, path, threat_type, patch_advice.get("developer_fix", ""))
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+        except Exception as e:
+            print("Failed to save log to DB:", e)
+        
         send_discord_alert(log_entry)
         
         return jsonify({
@@ -142,6 +204,10 @@ def aegis_firewall_middleware():
         }), 403
 
 # --- 4. Reverse Proxy Route for Customers ---
+ORIGIN_SERVER_MAP = {
+    "acme.com": "http://192.168.1.50:8000",
+}
+
 @app.route('/proxy/<client_domain>/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def reverse_proxy(client_domain, subpath):
     if client_domain not in ORIGIN_SERVER_MAP:
@@ -174,7 +240,7 @@ def dashboard():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Aegis Core - Enterprise WAF & SaaS Dashboard</title>
+        <title>Aegis Core - Enterprise WAF & Database-Driven SaaS</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
@@ -186,11 +252,11 @@ def dashboard():
                 </div>
                 <div>
                     <h1 class="font-bold text-lg tracking-wide text-cyan-400">AEGIS CORE</h1>
-                    <p class="text-xs text-slate-400">International System Security • Enterprise WAF</p>
+                    <p class="text-xs text-slate-400">PostgreSQL Powered • Enterprise WAF</p>
                 </div>
             </div>
             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span> WAF Active & Protected
+                <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span> DB Connected & Active
             </span>
         </nav>
         <main class="p-6 max-w-7xl mx-auto space-y-6">
@@ -198,7 +264,7 @@ def dashboard():
                 <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
                     <p class="text-sm font-medium text-slate-400">Total Intercepted Threats</p>
                     <h3 id="threatCount" class="text-3xl font-extrabold text-cyan-400 mt-2">0</h3>
-                    <span class="text-xs text-emerald-400 mt-1 inline-block"><i class="fa-solid fa-arrow-up"></i> Real-time tracking</span>
+                    <span class="text-xs text-emerald-400 mt-1 inline-block"><i class="fa-solid fa-database"></i> Synced with Database</span>
                 </div>
                 <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
                     <p class="text-sm font-medium text-slate-400">Protection Engine</p>
@@ -206,39 +272,16 @@ def dashboard():
                     <span class="text-xs text-cyan-400 mt-1 inline-block">Active & Providing Fixes</span>
                 </div>
                 <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
-                    <p class="text-sm font-medium text-slate-400">System Status</p>
-                    <h3 class="text-xl font-bold text-emerald-400 mt-2">100% Operational</h3>
+                    <p class="text-sm font-medium text-slate-400">Storage Status</p>
+                    <h3 class="text-xl font-bold text-emerald-400 mt-2">PostgreSQL Online</h3>
                     <span class="text-xs text-slate-400 mt-1 inline-block">Zero-Gated Core</span>
-                </div>
-            </div>
-
-            <!-- Pricing & SaaS Section -->
-            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-xl shadow-lg">
-                <h2 class="text-lg font-bold text-cyan-400 mb-4"><i class="fa-solid fa-tags mr-2"></i> Enterprise SaaS Plans</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
-                        <h3 class="font-bold text-slate-200">Starter WAF</h3>
-                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$29<span class="text-xs text-slate-400">/mo</span></p>
-                        <p class="text-xs text-slate-400 mt-2">SQLi & XSS Protection + Rate Limiting</p>
-                    </div>
-                    <div class="bg-slate-950 p-4 rounded-lg border-2 border-cyan-500">
-                        <span class="bg-cyan-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded">POPULAR</span>
-                        <h3 class="font-bold text-slate-200 mt-1">Business Pro</h3>
-                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$79<span class="text-xs text-slate-400">/mo</span></p>
-                        <p class="text-xs text-slate-400 mt-2">AI Patch Advisor + Discord Alerts</p>
-                    </div>
-                    <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
-                        <h3 class="font-bold text-slate-200">Global Enterprise</h3>
-                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$199<span class="text-xs text-slate-400">/mo</span></p>
-                        <p class="text-xs text-slate-400 mt-2">Dedicated Proxy Node + Custom Rules</p>
-                    </div>
                 </div>
             </div>
 
             <div class="bg-slate-900/80 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
                     <h2 class="font-semibold text-slate-200 flex items-center">
-                        <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Live Security Forensics & AI Patch Log
+                        <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Live Security Forensics & Database Logs
                     </h2>
                     <button onclick="fetchLogs()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
                         <i class="fa-solid fa-rotate mr-1"></i> Refresh Logs
@@ -282,21 +325,12 @@ def dashboard():
                     data.recent_forensic_logs.forEach(log => {
                         const row = document.createElement('tr');
                         row.className = "hover:bg-slate-800/50 transition";
-                        let aiAdviceHtml = `<span class="text-slate-500">N/A</span>`;
-                        if (log.ai_patch_advisor) {
-                            aiAdviceHtml = `
-                                <div class="bg-slate-950 p-2.5 rounded border border-slate-800 space-y-1">
-                                    <p class="text-xs text-amber-400 font-medium"><i class="fa-solid fa-wand-magic-sparkles"></i> ${log.ai_patch_advisor.developer_fix}</p>
-                                    <code class="text-[11px] bg-slate-900 text-cyan-300 p-1 rounded block overflow-x-auto">${log.ai_patch_advisor.secure_code_example}</code>
-                                </div>
-                            `;
-                        }
                         row.innerHTML = `
                             <td class="px-6 py-4 text-xs text-slate-400">${log.timestamp}</td>
                             <td class="px-6 py-4 font-mono text-cyan-400">${log.ip}</td>
                             <td class="px-6 py-4 font-mono text-slate-300">${log.path}</td>
                             <td class="px-6 py-4"><span class="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-xs font-medium">${log.threat}</span></td>
-                            <td class="px-6 py-4">${aiAdviceHtml}</td>
+                            <td class="px-6 py-4 text-xs text-amber-300">${log.ai_patch || 'N/A'}</td>
                         `;
                         tbody.appendChild(row);
                     });
@@ -314,9 +348,29 @@ def dashboard():
 
 @app.route('/api/v1/security/logs', methods=['GET'])
 def get_security_logs():
+    logs = []
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT timestamp, ip, path, threat, ai_patch FROM security_logs ORDER BY id DESC LIMIT 15")
+            rows = cursor.fetchall()
+            for row in rows:
+                logs.append({
+                    "timestamp": row[0],
+                    "ip": row[1],
+                    "path": row[2],
+                    "threat": row[3],
+                    "ai_patch": row[4]
+                })
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        print("Failed to fetch logs from DB:", e)
+
     return jsonify({
-        "total_threats_intercepted": len(SECURITY_LOGS),
-        "recent_forensic_logs": SECURITY_LOGS[:15]
+        "total_threats_intercepted": len(logs),
+        "recent_forensic_logs": logs
     })
 
 if __name__ == '__main__':
