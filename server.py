@@ -2,18 +2,22 @@ import os
 import time
 import re
 import requests
-import psycopg2
-from collections import defaultdict
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
+# PostgreSQL লাইব্রেরি সেফ ইমপোর্ট
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
-    if not DATABASE_URL:
+    if not DATABASE_URL or not psycopg2:
         return None
     try:
         url = urlparse(DATABASE_URL)
@@ -29,20 +33,11 @@ def get_db_connection():
         print("Database connection error:", e)
         return None
 
-try:
-    import psycopg2
-except ImportError:
-    psycopg2 = None
-
 def init_db():
-    if not psycopg2 or not DATABASE_URL:
-        print("PostgreSQL is not configured.")
-        return
     conn = get_db_connection()
     if conn:
         try:
             cursor = conn.cursor()
-            # কাস্টমার টেবিল (ইমেইল এবং পাসওয়ার্ড ফিল্ডসহ)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS customers (
                     api_key TEXT PRIMARY KEY,
@@ -55,7 +50,6 @@ def init_db():
                     origin_ip TEXT
                 )
             ''')
-            # সিকিউরিটি লগ টেবিল
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS security_logs (
                     id SERIAL PRIMARY KEY,
@@ -69,7 +63,6 @@ def init_db():
             ''')
             conn.commit()
             
-            # ডিফল্ট টেস্ট কাস্টমার বা প্রথম কাস্টমার ইনসার্ট
             cursor.execute("SELECT COUNT(*) FROM customers")
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
@@ -89,7 +82,7 @@ except Exception as e:
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
 
-# আপনার দেওয়া নির্দিষ্ট অ্যাডমিন ক্রিপডেনশিয়াল
+# আপনার নির্দিষ্ট অ্যাডমিন ক্রিপডেনশিয়াল
 ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
@@ -306,7 +299,7 @@ def admin_login():
             session['is_admin'] = True
             return redirect(url_for('admin_dashboard'))
         else:
-            error = "Invalid Admin Credentials (Use: ibr@him / admin@firewall.com)"
+            error = "Invalid Admin Credentials"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -361,15 +354,12 @@ def admin_dashboard():
             success_msg = f"Error: {e}"
 
     customers = []
-    logs = []
     try:
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
             cursor.execute("SELECT api_key, username, email, client_name, domain, plan, origin_ip FROM customers")
             customers = cursor.fetchall()
-            cursor.execute("SELECT timestamp, ip, path, threat, ai_patch, client_domain FROM security_logs ORDER BY id DESC LIMIT 20")
-            logs = cursor.fetchall()
             cursor.close()
             conn.close()
     except Exception as e:
@@ -395,7 +385,7 @@ def admin_dashboard():
             {% endif %}
             
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client (Credentials & WAF)</h2>
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <input type="text" name="client_name" placeholder="Company Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="username" placeholder="Client Username" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
@@ -445,7 +435,7 @@ def admin_dashboard():
         </main>
     </body>
     </html>
-    """, success_msg=success_msg, customers=customers, logs=logs)
+    """, success_msg=success_msg, customers=customers)
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -457,7 +447,7 @@ def admin_logout():
 def client_login():
     error = None
     if request.method == 'POST':
-        identity = request.form.get('identity') # username বা email বা api_key
+        identity = request.form.get('identity')
         password = request.form.get('password')
         try:
             conn = get_db_connection()
