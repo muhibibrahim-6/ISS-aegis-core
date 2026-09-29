@@ -6,12 +6,11 @@ from collections import defaultdict
 request_history = defaultdict(list)
 BLOCKED_IPS = set()
 blocked_until = {}
-SECURITY_LOGS = []  # ফরেনসিক ও এআই অ্যাডভাইজর লগ স্টোরেজ
+SECURITY_LOGS = []
 
 MAX_REQUESTS_PER_MINUTE = 60
 BLOCK_DURATION = 300  # ৫ মিনিট ব্লক
 
-# ডিপ WAF প্যাটার্নস (SQLi, XSS, Path Traversal)
 SQLI_PATTERNS = [
     (r"union\s+select", "SQL Injection (UNION based)"),
     (r"or\s+1\s*=\s*1", "SQL Injection (Boolean based tautology)"),
@@ -26,47 +25,43 @@ XSS_PATTERNS = [
 ]
 
 def generate_ai_patch_advice(threat_type):
-    """বড় কোম্পানিগুলো যা দেয় না: ফায়ারওয়াল নিজেই কোড ফিক্স করার এআই সাজেশন বা প্যাচ অ্যাডভাইস দেবে"""
     if "SQL Injection" in threat_type:
         return {
             "vulnerability": "SQL Injection",
             "risk_level": "CRITICAL",
-            "developer_fix": "Use Parameterized Queries or ORM (like SQLAlchemy) instead of concatenating raw strings in your database queries.",
+            "developer_fix": "Use Parameterized Queries or ORM (like SQLAlchemy) instead of concatenating raw strings.",
             "secure_code_example": "cursor.execute('SELECT * FROM users WHERE username = %s', (username,))"
         }
     elif "Cross-Site Scripting" in threat_type:
         return {
             "vulnerability": "XSS (Cross-Site Scripting)",
             "risk_level": "HIGH",
-            "developer_fix": "Always escape user inputs before rendering them in HTML templates. Use jinja2 auto-escaping or HTML entity encoding.",
+            "developer_fix": "Always escape user inputs before rendering them in HTML templates.",
             "secure_code_example": "{{ user_input | escape }}"
         }
     return {
         "vulnerability": "General Web Attack",
         "risk_level": "MEDIUM",
-        "developer_fix": "Ensure all input parameters are strictly validated and sanitised on the server side."
+        "developer_fix": "Ensure all input parameters are strictly validated."
     }
 
 def analyze_payload(text):
     if not text:
         return None
     text_lower = str(text).lower()
-    
     for pattern, desc in SQLI_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
     for pattern, desc in XSS_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
-            
     return None
 
 def aegis_firewall_middleware():
-    client_ip = request.remote_addr
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     path = request.path
     
-    # ১. ব্লক লিস্ট চেক
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
             return jsonify({
@@ -77,7 +72,6 @@ def aegis_firewall_middleware():
             BLOCKED_IPS.remove(client_ip)
             del blocked_until[client_ip]
 
-    # ২. পে-লোড ও রিকোয়েস্ট ইনস্পেকশন (WAF Core)
     req_payload = str(request.get_json(silent=True) or request.form.to_dict())
     target_data = request.full_path + " " + req_payload
     
@@ -86,8 +80,6 @@ def aegis_firewall_middleware():
     if threat_type:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
-        
-        # ইউনিক ফিচার: এআই প্যাচ অ্যাডভাইস এবং ফরেনসিক লগ জেনারেট করা
         patch_advice = generate_ai_patch_advice(threat_type)
         
         log_entry = {
@@ -97,16 +89,15 @@ def aegis_firewall_middleware():
             "threat": threat_type,
             "ai_patch_advisor": patch_advice
         }
-        SECURITY_LOGS.insert(0, log_entry)  # নতুন লগ উপরে যুক্ত হবে
+        SECURITY_LOGS.insert(0, log_entry)
         
         return jsonify({
             "error": "Web Application Firewall Triggered",
             "threat_detected": threat_type,
             "action": "IP Blocked & Forensic Logged",
-            "ai_developer_advisor": patch_advice  # ডেভেলপারের জন্য ফ্রি ইনস্ট্যান্ট সলিউশন!
+            "ai_developer_advisor": patch_advice
         }), 403
 
-    # ৩. রেট লিমিটিং
     request_history[client_ip] = [t for t in request_history[client_ip] if current_time - t < 60]
     request_history[client_ip].append(current_time)
     
