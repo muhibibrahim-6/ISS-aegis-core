@@ -1,18 +1,32 @@
 import os
-from flask import Flask, jsonify
 import time
-from collections import defaultdict
 import re
+import requests
+from collections import defaultdict
+from flask import Flask, jsonify, request, render_template_string, Response
 
 app = Flask(__name__)
 
-# --- Firewall Core Logic ---
+# --- 1. Configuration & Storage ---
+# ডিসকর্ড ওয়েবহুক ইউআরএল (এখানে আপনার ডিসকর্ড চ্যানেলের ওয়েবহুক লিংক বসাবেন)
+DISCORD_WEBHOOK_URL = "YOUR_DISCORD_WEBHOOK_URL_HERE"
+
+# রেজিস্টার্ড কাস্টমার বা ক্লায়েন্ট ডাটাবেজ
+CUSTOMERS = {
+    "aegis_live_key_999": {"client_name": "Acme Corp", "domain": "acme.com", "plan": "Enterprise"},
+    "aegis_live_key_123": {"client_name": "CyberShop", "domain": "cybershop.bd", "plan": "Pro"}
+}
+
+# কাস্টমারদের রিয়েল সার্ভার ম্যাপিং (রিভার্স প্রক্সির জন্য)
+ORIGIN_SERVER_MAP = {
+    "acme.com": "http://192.168.1.50:8000",
+}
+
 request_history = defaultdict(list)
 BLOCKED_IPS = set()
 blocked_until = {}
 SECURITY_LOGS = []
 
-MAX_REQUESTS_PER_MINUTE = 60
 BLOCK_DURATION = 300
 
 SQLI_PATTERNS = [
@@ -28,12 +42,13 @@ XSS_PATTERNS = [
     (r"onerror\s*=", "Cross-Site Scripting (Event handler injection)")
 ]
 
+# --- 2. Core Security & AI Patch Engine ---
 def generate_ai_patch_advice(threat_type):
     if "SQL Injection" in threat_type:
         return {
             "vulnerability": "SQL Injection",
             "risk_level": "CRITICAL",
-            "developer_fix": "Use Parameterized Queries or ORM (like SQLAlchemy) instead of concatenating raw strings.",
+            "developer_fix": "Use Parameterized Queries or ORM instead of raw string concatenation.",
             "secure_code_example": "cursor.execute('SELECT * FROM users WHERE username = %s', (username,))"
         }
     elif "Cross-Site Scripting" in threat_type:
@@ -61,21 +76,36 @@ def analyze_payload(text):
             return desc
     return None
 
+def send_discord_alert(threat_data):
+    if "YOUR_DISCORD_WEBHOOK_URL" in DISCORD_WEBHOOK_URL:
+        return  # লিংক সেট না থাকলে এড়িয়ে যাবে
+    payload = {
+        "content": f"🚨 **Aegis Core WAF Alert!**\n"
+                   f"• **Threat:** {threat_data['threat']}\n"
+                   f"• **Attacker IP:** `{threat_data['ip']}`\n"
+                   f"• **Target Path:** `{threat_data['path']}`\n"
+                   f"• **Action:** IP Blocked & Logged"
+    }
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=3)
+    except Exception as e:
+        print("Discord alert failed:", e)
+
+# --- 3. Firewall Middleware ---
 @app.before_request
 def aegis_firewall_middleware():
-    from flask import request
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     path = request.path
     
-    # ড্যাশবোর্ড ও লগ এপিআই রুটগুলোকে ফায়ারওয়াল চেকিং থেকে মুক্ত রাখা
-    if path == '/' or path == '/api/v1/security/logs':
+    # ড্যাশবোর্ড, লগ এপিআই এবং স্ট্যাটিক রুটগুলোকে ফায়ারওয়াল চেকিং থেকে মুক্ত রাখা
+    if path == '/' or path == '/api/v1/security/logs' or path.startswith('/proxy/'):
         return
         
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
             return jsonify({
-                "error": "Access Denied by Aegis Core",
+                "error": "Access Denied by Aegis Core WAF",
                 "reason": "Temporary IP ban active due to security violation."
             }), 403
         else:
@@ -101,6 +131,9 @@ def aegis_firewall_middleware():
         }
         SECURITY_LOGS.insert(0, log_entry)
         
+        # ডিসকর্ডে নোটিফিকেশন পাঠানো
+        send_discord_alert(log_entry)
+        
         return jsonify({
             "error": "Web Application Firewall Triggered",
             "threat_detected": threat_type,
@@ -108,10 +141,34 @@ def aegis_firewall_middleware():
             "ai_developer_advisor": patch_advice
         }), 403
 
-# --- Dashboard UI Route ---
+# --- 4. Reverse Proxy Route for Customers ---
+@app.route('/proxy/<client_domain>/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def reverse_proxy(client_domain, subpath):
+    if client_domain not in ORIGIN_SERVER_MAP:
+        return jsonify({"error": "Target Client Domain Not Registered in Aegis Core"}), 404
+        
+    target_url = f"{ORIGIN_SERVER_MAP[client_domain]}/{subpath}"
+    
+    try:
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers={key: value for (key, value) in request.headers if key != 'Host'},
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            timeout=10
+        )
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+        return Response(resp.content, resp.status_code, headers)
+    except Exception as e:
+        return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
+
+# --- 5. Dashboard UI & Logs API ---
 @app.route('/')
 def dashboard():
-    return """
+    html_content = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -133,7 +190,7 @@ def dashboard():
                 </div>
             </div>
             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span> WAF Active
+                <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span> WAF Active & Protected
             </span>
         </nav>
         <main class="p-6 max-w-7xl mx-auto space-y-6">
@@ -154,6 +211,30 @@ def dashboard():
                     <span class="text-xs text-slate-400 mt-1 inline-block">Zero-Gated Core</span>
                 </div>
             </div>
+
+            <!-- Pricing & SaaS Section -->
+            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-xl shadow-lg">
+                <h2 class="text-lg font-bold text-cyan-400 mb-4"><i class="fa-solid fa-tags mr-2"></i> Enterprise SaaS Plans</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                        <h3 class="font-bold text-slate-200">Starter WAF</h3>
+                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$29<span class="text-xs text-slate-400">/mo</span></p>
+                        <p class="text-xs text-slate-400 mt-2">SQLi & XSS Protection + Rate Limiting</p>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-lg border-2 border-cyan-500">
+                        <span class="bg-cyan-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded">POPULAR</span>
+                        <h3 class="font-bold text-slate-200 mt-1">Business Pro</h3>
+                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$79<span class="text-xs text-slate-400">/mo</span></p>
+                        <p class="text-xs text-slate-400 mt-2">AI Patch Advisor + Discord Alerts</p>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                        <h3 class="font-bold text-slate-200">Global Enterprise</h3>
+                        <p class="text-2xl font-extrabold text-cyan-400 mt-2">$199<span class="text-xs text-slate-400">/mo</span></p>
+                        <p class="text-xs text-slate-400 mt-2">Dedicated Proxy Node + Custom Rules</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-slate-900/80 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
                     <h2 class="font-semibold text-slate-200 flex items-center">
@@ -229,6 +310,7 @@ def dashboard():
     </body>
     </html>
     """
+    return render_template_string(html_content)
 
 @app.route('/api/v1/security/logs', methods=['GET'])
 def get_security_logs():
