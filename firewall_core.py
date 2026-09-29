@@ -6,46 +6,105 @@ from collections import defaultdict
 request_history = defaultdict(list)
 BLOCKED_IPS = set()
 blocked_until = {}
+SECURITY_LOGS = []  # ফরেনসিক ও এআই অ্যাডভাইজর লগ স্টোরেজ
 
-MAX_REQUESTS_PER_MINUTE = 50
-BLOCK_DURATION = 300  # ৫ মিনিট
+MAX_REQUESTS_PER_MINUTE = 60
+BLOCK_DURATION = 300  # ৫ মিনিট ব্লক
 
-# সিকিউরিটি প্যাটার্নস (SQLi & XSS)
-SQLI_PATTERNS = [r"union\s+select", r"or\s+1\s*=\s*1", r"drop\s+table", r"(\%27)|(\')"]
-XSS_PATTERNS = [r"<script[^>]*>[\s\S]*?</script>", r"javascript\s*:", r"onerror\s*="]
+# ডিপ WAF প্যাটার্নস (SQLi, XSS, Path Traversal)
+SQLI_PATTERNS = [
+    (r"union\s+select", "SQL Injection (UNION based)"),
+    (r"or\s+1\s*=\s*1", "SQL Injection (Boolean based tautology)"),
+    (r"drop\s+table", "SQL Injection (Destructive DROP command)"),
+    (r"(\%27)|(\')", "SQL Injection (Single quote anomaly)")
+]
+
+XSS_PATTERNS = [
+    (r"<script[^>]*>[\s\S]*?</script>", "Cross-Site Scripting (Script tag injection)"),
+    (r"javascript\s*:", "Cross-Site Scripting (JS pseudo-protocol)"),
+    (r"onerror\s*=", "Cross-Site Scripting (Event handler injection)")
+]
+
+def generate_ai_patch_advice(threat_type):
+    """বড় কোম্পানিগুলো যা দেয় না: ফায়ারওয়াল নিজেই কোড ফিক্স করার এআই সাজেশন বা প্যাচ অ্যাডভাইস দেবে"""
+    if "SQL Injection" in threat_type:
+        return {
+            "vulnerability": "SQL Injection",
+            "risk_level": "CRITICAL",
+            "developer_fix": "Use Parameterized Queries or ORM (like SQLAlchemy) instead of concatenating raw strings in your database queries.",
+            "secure_code_example": "cursor.execute('SELECT * FROM users WHERE username = %s', (username,))"
+        }
+    elif "Cross-Site Scripting" in threat_type:
+        return {
+            "vulnerability": "XSS (Cross-Site Scripting)",
+            "risk_level": "HIGH",
+            "developer_fix": "Always escape user inputs before rendering them in HTML templates. Use jinja2 auto-escaping or HTML entity encoding.",
+            "secure_code_example": "{{ user_input | escape }}"
+        }
+    return {
+        "vulnerability": "General Web Attack",
+        "risk_level": "MEDIUM",
+        "developer_fix": "Ensure all input parameters are strictly validated and sanitised on the server side."
+    }
 
 def analyze_payload(text):
     if not text:
         return None
     text_lower = str(text).lower()
-    for pattern in SQLI_PATTERNS:
+    
+    for pattern, desc in SQLI_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
-            return "SQL Injection Detected"
-    for pattern in XSS_PATTERNS:
+            return desc
+    for pattern, desc in XSS_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
-            return "XSS Attack Detected"
+            return desc
+            
     return None
 
 def aegis_firewall_middleware():
     client_ip = request.remote_addr
     current_time = time.time()
+    path = request.path
     
     # ১. ব্লক লিস্ট চেক
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
-            return jsonify({"error": "Blocked by Aegis Core", "reason": "Temporary IP ban active"}), 403
+            return jsonify({
+                "error": "Access Denied by Aegis Core",
+                "reason": "Temporary IP ban active due to security violation."
+            }), 403
         else:
             BLOCKED_IPS.remove(client_ip)
             del blocked_until[client_ip]
 
-    # ২. পে-লোড ও রিকোয়েস্ট ইনস্পেকশন
-    target_data = request.full_path + str(request.get_json(silent=True) or request.form.to_dict())
-    threat = analyze_payload(target_data)
+    # ২. পে-লোড ও রিকোয়েস্ট ইনস্পেকশন (WAF Core)
+    req_payload = str(request.get_json(silent=True) or request.form.to_dict())
+    target_data = request.full_path + " " + req_payload
     
-    if threat:
+    threat_type = analyze_payload(target_data)
+    
+    if threat_type:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
-        return jsonify({"error": "WAF Blocked", "threat": threat}), 403
+        
+        # ইউনিক ফিচার: এআই প্যাচ অ্যাডভাইস এবং ফরেনসিক লগ জেনারেট করা
+        patch_advice = generate_ai_patch_advice(threat_type)
+        
+        log_entry = {
+            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time)),
+            "ip": client_ip,
+            "path": path,
+            "threat": threat_type,
+            "ai_patch_advisor": patch_advice
+        }
+        SECURITY_LOGS.insert(0, log_entry)  # নতুন লগ উপরে যুক্ত হবে
+        
+        return jsonify({
+            "error": "Web Application Firewall Triggered",
+            "threat_detected": threat_type,
+            "action": "IP Blocked & Forensic Logged",
+            "ai_developer_advisor": patch_advice  # ডেভেলপারের জন্য ফ্রি ইনস্ট্যান্ট সলিউশন!
+        }), 403
 
     # ৩. রেট লিমিটিং
     request_history[client_ip] = [t for t in request_history[client_ip] if current_time - t < 60]
@@ -54,4 +113,7 @@ def aegis_firewall_middleware():
     if len(request_history[client_ip]) > MAX_REQUESTS_PER_MINUTE:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
-        return jsonify({"error": "Rate Limit Exceeded", "reason": "Too many requests"}), 429
+        return jsonify({
+            "error": "Rate Limit Exceeded",
+            "reason": "Too many requests per minute."
+        }), 429
