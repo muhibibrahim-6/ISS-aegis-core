@@ -42,15 +42,20 @@ def init_db():
     if conn:
         try:
             cursor = conn.cursor()
+            # কাস্টমার টেবিল (ইমেইল এবং পাসওয়ার্ড ফিল্ডসহ)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS customers (
                     api_key TEXT PRIMARY KEY,
+                    username TEXT,
+                    email TEXT,
+                    password TEXT,
                     client_name TEXT,
                     domain TEXT,
                     plan TEXT,
                     origin_ip TEXT
                 )
             ''')
+            # সিকিউরিটি লগ টেবিল
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS security_logs (
                     id SERIAL PRIMARY KEY,
@@ -64,12 +69,12 @@ def init_db():
             ''')
             conn.commit()
             
-            # ডিফল্ট অ্যাডমিন বা টেস্ট কাস্টমার
+            # ডিফল্ট টেস্ট কাস্টমার বা প্রথম কাস্টমার ইনসার্ট
             cursor.execute("SELECT COUNT(*) FROM customers")
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
-                    "INSERT INTO customers (api_key, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s)",
-                    ("aegis_live_key_999", "Acme Corp", "acme.com", "Enterprise", "http://192.168.1.50:8000")
+                    "INSERT INTO customers (api_key, username, email, password, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    ("aegis_live_key_999", "ibr@him", "admin@firewall.com", "muhib5869@", "Acme Corp", "acme.com", "Enterprise", "http://192.168.1.50:8000")
                 )
                 conn.commit()
             cursor.close()
@@ -83,12 +88,15 @@ except Exception as e:
     print("Database initialization skipped:", e)
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
-ADMIN_SECRET_PASSWORD = os.environ.get("ADMIN_PASSWORD", "aegisadmin123")
+
+# আপনার দেওয়া নির্দিষ্ট অ্যাডমিন ক্রিপডেনশিয়াল
+ADMIN_USER = "ibr@him"
+ADMIN_EMAIL = "admin@firewall.com"
+ADMIN_PASS = "muhib5869@"
 
 BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300
-FALLBACK_LOGS = []
 
 SQLI_PATTERNS = [
     (r"union\s+select", "SQL Injection (UNION based)"),
@@ -250,7 +258,7 @@ def reverse_proxy(client_domain, subpath):
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Routes: Public Landing & Pricing ---
+# --- Routes: Public Landing ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -282,39 +290,23 @@ def landing_page():
                 <h2 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Next-Gen Security & <span class="text-cyan-400">AI Patch Advisor</span></h2>
                 <p class="text-slate-400 max-w-2xl mx-auto text-sm">Protect your web applications from SQL Injection, XSS, and automated cyber threats with our multi-tenant cloud WAF.</p>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left">
-                    <h3 class="font-bold text-slate-200">Starter WAF</h3>
-                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$29<span class="text-xs text-slate-400">/mo</span></p>
-                    <p class="text-xs text-slate-400 mt-2">Core SQLi & XSS Protection</p>
-                </div>
-                <div class="bg-slate-900 border-2 border-cyan-500 p-6 rounded-xl text-left shadow-xl shadow-cyan-500/10">
-                    <span class="bg-cyan-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded">POPULAR</span>
-                    <h3 class="font-bold text-slate-200 mt-1">Business Pro</h3>
-                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$79<span class="text-xs text-slate-400">/mo</span></p>
-                    <p class="text-xs text-slate-400 mt-2">AI Patch Advisor + Alerts</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left">
-                    <h3 class="font-bold text-slate-200">Enterprise</h3>
-                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$199<span class="text-xs text-slate-400">/mo</span></p>
-                    <p class="text-xs text-slate-400 mt-2">Dedicated Proxy Nodes</p>
-                </div>
-            </div>
         </main>
     </body>
     </html>
     """)
 
-# --- Routes: Admin Panel ---
+# --- Routes: Admin Login & Panel ---
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     error = None
     if request.method == 'POST':
-        if request.form.get('password') == ADMIN_SECRET_PASSWORD:
+        user_input = request.form.get('username')
+        pass_input = request.form.get('password')
+        if (user_input == ADMIN_USER or user_input == ADMIN_EMAIL) and pass_input == ADMIN_PASS:
             session['is_admin'] = True
             return redirect(url_for('admin_dashboard'))
         else:
-            error = "Invalid Admin Password"
+            error = "Invalid Admin Credentials (Use: ibr@him / admin@firewall.com)"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -325,12 +317,13 @@ def admin_login():
     </head>
     <body class="bg-slate-950 text-slate-100 flex items-center justify-center h-screen">
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
-            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-lock"></i> Admin Portal</h2>
+            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-lock"></i> Master Admin Portal</h2>
             {% if error %}
             <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
             {% endif %}
-            <input type="password" name="password" placeholder="Enter Admin Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
-            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Login to Master Panel</button>
+            <input type="text" name="username" placeholder="Username or Email (ibr@him)" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Login</button>
         </form>
     </body>
     </html>
@@ -343,19 +336,22 @@ def admin_dashboard():
     
     success_msg = None
     if request.method == 'POST':
-        api_key = request.form.get('api_key')
         client_name = request.form.get('client_name')
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
         domain = request.form.get('domain')
-        plan = request.form.get('plan')
+        api_key = request.form.get('api_key')
         origin_ip = request.form.get('origin_ip')
+        plan = request.form.get('plan')
         
         try:
             conn = get_db_connection()
             if conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO customers (api_key, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s)",
-                    (api_key, client_name, domain, plan, origin_ip)
+                    "INSERT INTO customers (api_key, username, email, password, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (api_key, username, email, password, client_name, domain, plan, origin_ip)
                 )
                 conn.commit()
                 cursor.close()
@@ -370,7 +366,7 @@ def admin_dashboard():
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT api_key, client_name, domain, plan, origin_ip FROM customers")
+            cursor.execute("SELECT api_key, username, email, client_name, domain, plan, origin_ip FROM customers")
             customers = cursor.fetchall()
             cursor.execute("SELECT timestamp, ip, path, threat, ai_patch, client_domain FROM security_logs ORDER BY id DESC LIMIT 20")
             logs = cursor.fetchall()
@@ -390,54 +386,61 @@ def admin_dashboard():
     </head>
     <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
-            <h1 class="font-bold text-cyan-400">AEGIS CORE • MASTER ADMIN</h1>
+            <h1 class="font-bold text-cyan-400">AEGIS CORE • MASTER ADMIN (ibr@him)</h1>
             <a href="/admin/logout" class="text-xs text-red-400 hover:underline">Logout</a>
         </nav>
-        <main class="p-6 max-w-6xl mx-auto space-y-6">
+        <main class="p-6 max-w-7xl mx-auto space-y-6">
             {% if success_msg %}
             <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded-lg text-sm">{{ success_msg }}</div>
             {% endif %}
             
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client</h2>
-                <form method="POST" class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                    <input type="text" name="client_name" placeholder="Client Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client (Credentials & WAF)</h2>
+                <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <input type="text" name="client_name" placeholder="Company Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="username" placeholder="Client Username" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="email" name="email" placeholder="Client Email" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="password" name="password" placeholder="Client Password" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="domain" placeholder="domain.com" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="api_key" placeholder="API Key (e.g. key_123)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="api_key" placeholder="API Key (e.g. aegis_key_123)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="origin_ip" placeholder="Origin Server (http://IP:Port)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                         <option>Starter</option>
                         <option>Pro</option>
                         <option>Enterprise</option>
                     </select>
-                    <button type="submit" class="md:col-span-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Add Client to Database</button>
+                    <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Create Client Account</button>
                 </form>
             </div>
 
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-users mr-2"></i> Registered Clients</h2>
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead>
-                        <tr class="border-b border-slate-800 text-slate-400 uppercase bg-slate-950">
-                            <th class="p-3">Client Name</th>
-                            <th class="p-3">Domain</th>
-                            <th class="p-3">API Key</th>
-                            <th class="p-3">Plan</th>
-                            <th class="p-3">Origin Server</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-800">
-                        {% for c in customers %}
-                        <tr>
-                            <td class="p-3 font-semibold">{{ c[1] }}</td>
-                            <td class="p-3 text-cyan-400">{{ c[2] }}</td>
-                            <td class="p-3 font-mono text-slate-400">{{ c[0] }}</td>
-                            <td class="p-3">{{ c[3] }}</td>
-                            <td class="p-3 font-mono text-slate-400">{{ c[4] }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-slate-400 uppercase bg-slate-950">
+                                <th class="p-3">Company</th>
+                                <th class="p-3">Username</th>
+                                <th class="p-3">Email</th>
+                                <th class="p-3">Domain</th>
+                                <th class="p-3">API Key</th>
+                                <th class="p-3">Plan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800">
+                            {% for c in customers %}
+                            <tr>
+                                <td class="p-3 font-semibold">{{ c[3] }}</td>
+                                <td class="p-3 text-cyan-400">{{ c[1] }}</td>
+                                <td class="p-3 text-slate-300">{{ c[2] }}</td>
+                                <td class="p-3 text-cyan-400">{{ c[4] }}</td>
+                                <td class="p-3 font-mono text-slate-400">{{ c[0] }}</td>
+                                <td class="p-3">{{ c[5] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </main>
     </body>
@@ -449,27 +452,31 @@ def admin_logout():
     session.pop('is_admin', None)
     return redirect(url_for('admin_login'))
 
-# --- Routes: Client Portal ---
+# --- Routes: Client Login & Portal ---
 @app.route('/client/login', methods=['GET', 'POST'])
 def client_login():
     error = None
     if request.method == 'POST':
-        api_key = request.form.get('api_key')
+        identity = request.form.get('identity') # username বা email বা api_key
+        password = request.form.get('password')
         try:
             conn = get_db_connection()
             if conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT client_name, domain, plan FROM customers WHERE api_key = %s", (api_key,))
+                cursor.execute(
+                    "SELECT client_name, domain, plan FROM customers WHERE (username = %s OR email = %s OR api_key = %s) AND password = %s",
+                    (identity, identity, identity, password)
+                )
                 client = cursor.fetchone()
                 cursor.close()
                 conn.close()
                 if client:
-                    session['client_domain'] = client[1]
                     session['client_name'] = client[0]
+                    session['client_domain'] = client[1]
                     return redirect(url_for('client_dashboard'))
         except Exception as e:
             print("Login error:", e)
-        error = "Invalid API Key"
+        error = "Invalid Credentials or API Key"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -480,12 +487,13 @@ def client_login():
     </head>
     <body class="bg-slate-950 text-slate-100 flex items-center justify-center h-screen">
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
-            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-shield"></i> Client Portal</h2>
+            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-shield"></i> Client Portal Login</h2>
             {% if error %}
             <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
             {% endif %}
-            <input type="text" name="api_key" placeholder="Enter Your API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
-            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Access Security Dashboard</button>
+            <input type="text" name="identity" placeholder="Username, Email or API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Access Portal</button>
         </form>
     </body>
     </html>
@@ -497,6 +505,7 @@ def client_dashboard():
         return redirect(url_for('client_login'))
     
     client_name = session.get('client_name')
+    client_domain = session.get('client_domain')
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -513,9 +522,9 @@ def client_dashboard():
         </nav>
         <main class="p-6 max-w-5xl mx-auto space-y-6">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Integration Proxy Endpoint</h2>
-                <p class="text-xs text-slate-400">Route your traffic through your assigned proxy gateway to secure your app.</p>
-                <code class="bg-slate-950 p-3 rounded block text-xs text-cyan-300 font-mono">https://<span id="hostName"></span>/proxy/yourdomain.com/path</code>
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Your Proxy Endpoint</h2>
+                <p class="text-xs text-slate-400">Route your application traffic through this secure gateway:</p>
+                <code class="bg-slate-950 p-3 rounded block text-xs text-cyan-300 font-mono">https://<span id="hostName"></span>/proxy/{{ client_domain }}/path</code>
             </div>
         </main>
         <script>
@@ -523,39 +532,12 @@ def client_dashboard():
         </script>
     </body>
     </html>
-    """, client_name=client_name)
+    """, client_name=client_name, client_domain=client_domain)
 
 @app.route('/client/logout')
 def client_logout():
     session.clear()
     return redirect(url_for('client_login'))
-
-@app.route('/api/v1/security/logs', methods=['GET'])
-def get_security_logs():
-    logs = []
-    try:
-        conn = get_db_connection()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT timestamp, ip, path, threat, ai_patch FROM security_logs ORDER BY id DESC LIMIT 15")
-            rows = cursor.fetchall()
-            for row in rows:
-                logs.append({
-                    "timestamp": row[0],
-                    "ip": row[1],
-                    "path": row[2],
-                    "threat": row[3],
-                    "ai_patch": row[4]
-                })
-            cursor.close()
-            conn.close()
-    except Exception as e:
-        print("Logs API Error:", e)
-
-    return jsonify({
-        "total_threats_intercepted": len(logs),
-        "recent_forensic_logs": logs
-    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
