@@ -2,13 +2,14 @@ import os
 import time
 import re
 import requests
+import psycopg2
 from collections import defaultdict
 from urllib.parse import urlparse
-from flask import Flask, jsonify, request, render_template_string, Response
+from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# --- 1. Database Configuration (PostgreSQL Safety Wrapper) ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
@@ -28,7 +29,6 @@ def get_db_connection():
         print("Database connection error:", e)
         return None
 
-# psycopg2 ইমপোর্ট সেফ রাখা (যদি লোকাল বা অন্য এনভায়রনমেন্টে থাকে)
 try:
     import psycopg2
 except ImportError:
@@ -36,7 +36,7 @@ except ImportError:
 
 def init_db():
     if not psycopg2 or not DATABASE_URL:
-        print("PostgreSQL is not configured. Running in memory-fallback mode.")
+        print("PostgreSQL is not configured.")
         return
     conn = get_db_connection()
     if conn:
@@ -47,7 +47,8 @@ def init_db():
                     api_key TEXT PRIMARY KEY,
                     client_name TEXT,
                     domain TEXT,
-                    plan TEXT
+                    plan TEXT,
+                    origin_ip TEXT
                 )
             ''')
             cursor.execute('''
@@ -57,16 +58,18 @@ def init_db():
                     ip TEXT,
                     path TEXT,
                     threat TEXT,
-                    ai_patch TEXT
+                    ai_patch TEXT,
+                    client_domain TEXT
                 )
             ''')
             conn.commit()
             
+            # ডিফল্ট অ্যাডমিন বা টেস্ট কাস্টমার
             cursor.execute("SELECT COUNT(*) FROM customers")
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
-                    "INSERT INTO customers (api_key, client_name, domain, plan) VALUES (%s, %s, %s, %s)",
-                    ("aegis_live_key_999", "Acme Corp", "acme.com", "Enterprise")
+                    "INSERT INTO customers (api_key, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s)",
+                    ("aegis_live_key_999", "Acme Corp", "acme.com", "Enterprise", "http://192.168.1.50:8000")
                 )
                 conn.commit()
             cursor.close()
@@ -80,11 +83,12 @@ except Exception as e:
     print("Database initialization skipped:", e)
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
+ADMIN_SECRET_PASSWORD = os.environ.get("ADMIN_PASSWORD", "aegisadmin123")
 
 BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300
-FALLBACK_LOGS = [] # ডেটাবেজ না থাকলে মেমোরিতে লগ রাখার ব্যবস্থা
+FALLBACK_LOGS = []
 
 SQLI_PATTERNS = [
     (r"union\s+select", "SQL Injection (UNION based)"),
@@ -153,7 +157,7 @@ def aegis_firewall_middleware():
     current_time = time.time()
     path = request.path
     
-    if path == '/' or path == '/api/v1/security/logs' or path.startswith('/proxy/'):
+    if path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/api/v1/security/logs' or path.startswith('/proxy/'):
         return
         
     if client_ip in BLOCKED_IPS:
@@ -175,7 +179,6 @@ def aegis_firewall_middleware():
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
         patch_advice = generate_ai_patch_advice(threat_type)
-        
         timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time))
         
         log_entry = {
@@ -183,29 +186,24 @@ def aegis_firewall_middleware():
             "ip": client_ip,
             "path": path,
             "threat": threat_type,
-            "ai_patch": patch_advice.get("developer_fix", "")
+            "ai_patch": patch_advice.get("developer_fix", ""),
+            "client_domain": "general"
         }
         
-        # ডেটাবেজে সেভ করার চেষ্টা, ফেইল করলে মেমোরি লিস্টে রাখা
-        saved_to_db = False
         try:
             conn = get_db_connection()
             if conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO security_logs (timestamp, ip, path, threat, ai_patch) VALUES (%s, %s, %s, %s, %s)",
-                    (timestamp_str, client_ip, path, threat_type, log_entry["ai_patch"])
+                    "INSERT INTO security_logs (timestamp, ip, path, threat, ai_patch, client_domain) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (timestamp_str, client_ip, path, threat_type, log_entry["ai_patch"], "general")
                 )
                 conn.commit()
                 cursor.close()
                 conn.close()
-                saved_to_db = True
         except Exception as e:
-            print("DB Log Insert Error:", e)
+            print("DB Log Error:", e)
             
-        if not saved_to_db:
-            FALLBACK_LOGS.insert(0, log_entry)
-        
         send_discord_alert(log_entry)
         
         return jsonify({
@@ -215,16 +213,27 @@ def aegis_firewall_middleware():
             "ai_developer_advisor": patch_advice
         }), 403
 
-ORIGIN_SERVER_MAP = {
-    "acme.com": "http://192.168.1.50:8000",
-}
-
+# --- Reverse Proxy Route ---
 @app.route('/proxy/<client_domain>/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def reverse_proxy(client_domain, subpath):
-    if client_domain not in ORIGIN_SERVER_MAP:
+    origin_url = None
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT origin_ip FROM customers WHERE domain = %s", (client_domain,))
+            row = cursor.fetchone()
+            if row:
+                origin_url = row[0]
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        print("Proxy DB Error:", e)
+
+    if not origin_url:
         return jsonify({"error": "Target Client Domain Not Registered in Aegis Core"}), 404
         
-    target_url = f"{ORIGIN_SERVER_MAP[client_domain]}/{subpath}"
+    target_url = f"{origin_url}/{subpath}"
     try:
         resp = requests.request(
             method=request.method,
@@ -241,123 +250,289 @@ def reverse_proxy(client_domain, subpath):
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
+# --- Routes: Public Landing & Pricing ---
 @app.route('/')
-def dashboard():
-    html_content = """
+def landing_page():
+    return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Aegis Core - Enterprise WAF & Database-Driven SaaS</title>
+        <title>Aegis Core - Enterprise WAF & Security SaaS</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
-    <body class="bg-slate-950 text-slate-100 font-sans antialiased">
+    <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-3">
                 <div class="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-lg text-cyan-400">
                     <i class="fa-solid fa-shield-halved text-xl"></i>
                 </div>
-                <div>
-                    <h1 class="font-bold text-lg tracking-wide text-cyan-400">AEGIS CORE</h1>
-                    <p class="text-xs text-slate-400">PostgreSQL Powered • Enterprise WAF</p>
-                </div>
+                <h1 class="font-bold text-lg tracking-wide text-cyan-400">AEGIS CORE</h1>
             </div>
-            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span class="w-2 h-2 mr-2 bg-emerald-400 rounded-full animate-pulse"></span> System Online
-            </span>
+            <div class="space-x-4">
+                <a href="/client/login" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg border border-slate-700 transition">Client Portal</a>
+                <a href="/admin/login" class="text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg transition">Admin Login</a>
+            </div>
         </nav>
-        <main class="p-6 max-w-7xl mx-auto space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
-                    <p class="text-sm font-medium text-slate-400">Total Intercepted Threats</p>
-                    <h3 id="threatCount" class="text-3xl font-extrabold text-cyan-400 mt-2">0</h3>
-                    <span class="text-xs text-emerald-400 mt-1 inline-block"><i class="fa-solid fa-shield"></i> Active Threat Counter</span>
-                </div>
-                <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
-                    <p class="text-sm font-medium text-slate-400">Protection Engine</p>
-                    <h3 class="text-xl font-bold text-slate-200 mt-2">AI Patch Advisor™</h3>
-                    <span class="text-xs text-cyan-400 mt-1 inline-block">Active & Providing Fixes</span>
-                </div>
-                <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-xl shadow-lg">
-                    <p class="text-sm font-medium text-slate-400">Storage Mode</p>
-                    <h3 class="text-xl font-bold text-emerald-400 mt-2">PostgreSQL / Fallback</h3>
-                    <span class="text-xs text-slate-400 mt-1 inline-block">Zero-Gated Core</span>
-                </div>
+        <main class="p-12 max-w-5xl mx-auto text-center space-y-8">
+            <div class="space-y-4">
+                <span class="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-3 py-1 rounded-full text-xs font-semibold">Enterprise Web Application Firewall</span>
+                <h2 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Next-Gen Security & <span class="text-cyan-400">AI Patch Advisor</span></h2>
+                <p class="text-slate-400 max-w-2xl mx-auto text-sm">Protect your web applications from SQL Injection, XSS, and automated cyber threats with our multi-tenant cloud WAF.</p>
             </div>
-
-            <div class="bg-slate-900/80 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
-                <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
-                    <h2 class="font-semibold text-slate-200 flex items-center">
-                        <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Live Security Forensics & Logs
-                    </h2>
-                    <button onclick="fetchLogs()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
-                        <i class="fa-solid fa-rotate mr-1"></i> Refresh Logs
-                    </button>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left">
+                    <h3 class="font-bold text-slate-200">Starter WAF</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$29<span class="text-xs text-slate-400">/mo</span></p>
+                    <p class="text-xs text-slate-400 mt-2">Core SQLi & XSS Protection</p>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase bg-slate-950/50">
-                                <th class="px-6 py-3">Timestamp</th>
-                                <th class="px-6 py-3">Attacker IP</th>
-                                <th class="px-6 py-3">Target Path</th>
-                                <th class="px-6 py-3">Threat Detected</th>
-                                <th class="px-6 py-3">AI Patch Solution</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logTableBody" class="divide-y divide-slate-800 text-sm">
-                            <tr>
-                                <td colspan="5" class="px-6 py-8 text-center text-slate-500">
-                                    <i class="fa-solid fa-shield text-3xl mb-2 text-slate-600 block"></i>
-                                    No attacks recorded yet. System is safe and monitoring traffic.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="bg-slate-900 border-2 border-cyan-500 p-6 rounded-xl text-left shadow-xl shadow-cyan-500/10">
+                    <span class="bg-cyan-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded">POPULAR</span>
+                    <h3 class="font-bold text-slate-200 mt-1">Business Pro</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$79<span class="text-xs text-slate-400">/mo</span></p>
+                    <p class="text-xs text-slate-400 mt-2">AI Patch Advisor + Alerts</p>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left">
+                    <h3 class="font-bold text-slate-200">Enterprise</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400 mt-2">$199<span class="text-xs text-slate-400">/mo</span></p>
+                    <p class="text-xs text-slate-400 mt-2">Dedicated Proxy Nodes</p>
                 </div>
             </div>
         </main>
+    </body>
+    </html>
+    """)
+
+# --- Routes: Admin Panel ---
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    error = None
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_SECRET_PASSWORD:
+            session['is_admin'] = True
+            return redirect(url_for('admin_dashboard'))
+        else:
+            error = "Invalid Admin Password"
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Admin Login - Aegis Core</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-950 text-slate-100 flex items-center justify-center h-screen">
+        <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
+            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-lock"></i> Admin Portal</h2>
+            {% if error %}
+            <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
+            {% endif %}
+            <input type="password" name="password" placeholder="Enter Admin Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Login to Master Panel</button>
+        </form>
+    </body>
+    </html>
+    """, error=error)
+
+@app.route('/admin/dashboard', methods=['GET', 'POST'])
+def admin_dashboard():
+    if not session.get('is_admin'):
+        return redirect(url_for('admin_login'))
+    
+    success_msg = None
+    if request.method == 'POST':
+        api_key = request.form.get('api_key')
+        client_name = request.form.get('client_name')
+        domain = request.form.get('domain')
+        plan = request.form.get('plan')
+        origin_ip = request.form.get('origin_ip')
+        
+        try:
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO customers (api_key, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s)",
+                    (api_key, client_name, domain, plan, origin_ip)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+                success_msg = f"Client {client_name} added successfully!"
+        except Exception as e:
+            success_msg = f"Error: {e}"
+
+    customers = []
+    logs = []
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT api_key, client_name, domain, plan, origin_ip FROM customers")
+            customers = cursor.fetchall()
+            cursor.execute("SELECT timestamp, ip, path, threat, ai_patch, client_domain FROM security_logs ORDER BY id DESC LIMIT 20")
+            logs = cursor.fetchall()
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        print("Admin DB Error:", e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Master Admin Dashboard - Aegis Core</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-slate-950 text-slate-100 font-sans">
+        <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
+            <h1 class="font-bold text-cyan-400">AEGIS CORE • MASTER ADMIN</h1>
+            <a href="/admin/logout" class="text-xs text-red-400 hover:underline">Logout</a>
+        </nav>
+        <main class="p-6 max-w-6xl mx-auto space-y-6">
+            {% if success_msg %}
+            <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded-lg text-sm">{{ success_msg }}</div>
+            {% endif %}
+            
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Onboard New Client</h2>
+                <form method="POST" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <input type="text" name="client_name" placeholder="Client Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="domain" placeholder="domain.com" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="api_key" placeholder="API Key (e.g. key_123)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="origin_ip" placeholder="Origin Server (http://IP:Port)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                        <option>Starter</option>
+                        <option>Pro</option>
+                        <option>Enterprise</option>
+                    </select>
+                    <button type="submit" class="md:col-span-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Add Client to Database</button>
+                </form>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-users mr-2"></i> Registered Clients</h2>
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 uppercase bg-slate-950">
+                            <th class="p-3">Client Name</th>
+                            <th class="p-3">Domain</th>
+                            <th class="p-3">API Key</th>
+                            <th class="p-3">Plan</th>
+                            <th class="p-3">Origin Server</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                        {% for c in customers %}
+                        <tr>
+                            <td class="p-3 font-semibold">{{ c[1] }}</td>
+                            <td class="p-3 text-cyan-400">{{ c[2] }}</td>
+                            <td class="p-3 font-mono text-slate-400">{{ c[0] }}</td>
+                            <td class="p-3">{{ c[3] }}</td>
+                            <td class="p-3 font-mono text-slate-400">{{ c[4] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </body>
+    </html>
+    """, success_msg=success_msg, customers=customers, logs=logs)
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_login'))
+
+# --- Routes: Client Portal ---
+@app.route('/client/login', methods=['GET', 'POST'])
+def client_login():
+    error = None
+    if request.method == 'POST':
+        api_key = request.form.get('api_key')
+        try:
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT client_name, domain, plan FROM customers WHERE api_key = %s", (api_key,))
+                client = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                if client:
+                    session['client_domain'] = client[1]
+                    session['client_name'] = client[0]
+                    return redirect(url_for('client_dashboard'))
+        except Exception as e:
+            print("Login error:", e)
+        error = "Invalid API Key"
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Client Portal Login - Aegis Core</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-950 text-slate-100 flex items-center justify-center h-screen">
+        <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
+            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-shield"></i> Client Portal</h2>
+            {% if error %}
+            <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
+            {% endif %}
+            <input type="text" name="api_key" placeholder="Enter Your API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Access Security Dashboard</button>
+        </form>
+    </body>
+    </html>
+    """, error=error)
+
+@app.route('/client/dashboard')
+def client_dashboard():
+    if not session.get('client_name'):
+        return redirect(url_for('client_login'))
+    
+    client_name = session.get('client_name')
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Client Dashboard - Aegis Core</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-slate-950 text-slate-100 font-sans">
+        <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
+            <h1 class="font-bold text-cyan-400">AEGIS CORE • CLIENT PORTAL ({{ client_name }})</h1>
+            <a href="/client/logout" class="text-xs text-red-400 hover:underline">Logout</a>
+        </nav>
+        <main class="p-6 max-w-5xl mx-auto space-y-6">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Integration Proxy Endpoint</h2>
+                <p class="text-xs text-slate-400">Route your traffic through your assigned proxy gateway to secure your app.</p>
+                <code class="bg-slate-950 p-3 rounded block text-xs text-cyan-300 font-mono">https://<span id="hostName"></span>/proxy/yourdomain.com/path</code>
+            </div>
+        </main>
         <script>
-            async function fetchLogs() {
-                try {
-                    const response = await fetch('/api/v1/security/logs');
-                    const data = await response.json();
-                    document.getElementById('threatCount').innerText = data.total_threats_intercepted;
-                    const tbody = document.getElementById('logTableBody');
-                    tbody.innerHTML = '';
-                    if (data.recent_forensic_logs.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">No attacks recorded yet.</td></tr>`;
-                        return;
-                    }
-                    data.recent_forensic_logs.forEach(log => {
-                        const row = document.createElement('tr');
-                        row.className = "hover:bg-slate-800/50 transition";
-                        row.innerHTML = `
-                            <td class="px-6 py-4 text-xs text-slate-400">${log.timestamp}</td>
-                            <td class="px-6 py-4 font-mono text-cyan-400">${log.ip}</td>
-                            <td class="px-6 py-4 font-mono text-slate-300">${log.path}</td>
-                            <td class="px-6 py-4"><span class="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-xs font-medium">${log.threat}</span></td>
-                            <td class="px-6 py-4 text-xs text-amber-300">${log.ai_patch || 'N/A'}</td>
-                        `;
-                        tbody.appendChild(row);
-                    });
-                } catch (error) {
-                    console.error("Error fetching security logs:", error);
-                }
-            }
-            setInterval(fetchLogs, 5000);
-            fetchLogs();
+            document.getElementById('hostName').innerText = window.location.host;
         </script>
     </body>
     </html>
-    """
-    return render_template_string(html_content)
+    """, client_name=client_name)
+
+@app.route('/client/logout')
+def client_logout():
+    session.clear()
+    return redirect(url_for('client_login'))
 
 @app.route('/api/v1/security/logs', methods=['GET'])
 def get_security_logs():
-    logs = list(FALLBACK_LOGS)
+    logs = []
     try:
         conn = get_db_connection()
         if conn:
@@ -375,11 +550,11 @@ def get_security_logs():
             cursor.close()
             conn.close()
     except Exception as e:
-        print("Failed to fetch logs from DB:", e)
+        print("Logs API Error:", e)
 
     return jsonify({
         "total_threats_intercepted": len(logs),
-        "recent_forensic_logs": logs[:15]
+        "recent_forensic_logs": logs
     })
 
 if __name__ == '__main__':
