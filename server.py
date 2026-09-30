@@ -3,11 +3,12 @@ import time
 import re
 import requests
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট (ডাটাবেজ ছাড়া চালানোর জন্য)
+# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট (এক্সপায়ারি ডেট সহ)
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -17,7 +18,8 @@ CUSTOMERS_DB = [
         "client_name": "My Main Server",
         "domain": "mysite.com",
         "plan": "Enterprise",
-        "origin_ip": "https://your-actual-website.com"
+        "origin_ip": "https://your-actual-website.com",
+        "expiry_date": "2027-12-31"
     }
 ]
 
@@ -85,22 +87,33 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route ---
+# --- Reverse Proxy Route (License Expiry Check সহ) ---
 @app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy(full_path):
     parts = full_path.split('/', 1)
     client_domain = parts[0]
     subpath = parts[1] if len(parts) > 1 else ""
 
-    origin_url = None
+    matched_client = None
     for c in CUSTOMERS_DB:
         if c['domain'].lower() == client_domain.lower() or client_domain.lower() in c['domain'].lower():
-            origin_url = c['origin_ip']
+            matched_client = c
             break
 
-    if not origin_url:
+    if not matched_client:
         return jsonify({"error": f"Target Domain '{client_domain}' Not Registered in Aegis Core"}), 404
         
+    # লাইসেন্সের মেয়াদ শেষ হয়ে গেছে কিনা চেক করা
+    expiry_date_str = matched_client.get('expiry_date')
+    if expiry_date_str:
+        try:
+            expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d")
+            if datetime.now() > expiry_date:
+                return jsonify({"error": "License Expired", "message": "This server's license has expired. Please contact admin."}), 403
+        except Exception:
+            pass
+
+    origin_url = matched_client['origin_ip']
     target_url = f"{origin_url.rstrip('/')}/{subpath}"
     try:
         resp = requests.request(
@@ -174,7 +187,7 @@ def admin_login():
     </html>
     """, error=error)
 
-# --- Admin Dashboard & Client Creator ---
+# --- Admin Dashboard, Client Creator & Delete Option ---
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 def admin_dashboard():
     if not session.get('is_admin'):
@@ -184,31 +197,43 @@ def admin_dashboard():
     error_msg = None
     
     if request.method == 'POST':
-        client_name = request.form.get('client_name')
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        domain = request.form.get('domain')
-        api_key = request.form.get('api_key')
-        origin_ip = request.form.get('origin_ip')
-        plan = request.form.get('plan')
+        action = request.form.get('action')
         
-        try:
-            # নতুন ক্লায়েন্ট সরাসরি লিস্টে যুক্ত করা হচ্ছে
-            new_client = {
-                "api_key": api_key,
-                "username": username,
-                "email": email,
-                "password": password,
-                "client_name": client_name,
-                "domain": domain,
-                "plan": plan,
-                "origin_ip": origin_ip
-            }
-            CUSTOMERS_DB.append(new_client)
-            success_msg = f"Client '{client_name}' created successfully!"
-        except Exception as e:
-            error_msg = f"Error: {e}"
+        # ক্লায়েন্ট ডিলিট করার লজিক
+        if action == 'delete':
+            api_key_to_delete = request.form.get('api_key')
+            global CUSTOMERS_DB
+            CUSTOMERS_DB = [c for c in CUSTOMERS_DB if c['api_key'] != api_key_to_delete]
+            success_msg = "Client/License deleted successfully!"
+            
+        # নতুন ক্লায়েন্ট বা লাইসেন্স ক্রিয়েট করার লজিক
+        elif action == 'create':
+            client_name = request.form.get('client_name')
+            username = request.form.get('username')
+            email = request.form.get('email')
+            password = request.form.get('password')
+            domain = request.form.get('domain')
+            api_key = request.form.get('api_key')
+            origin_ip = request.form.get('origin_ip')
+            plan = request.form.get('plan')
+            expiry_date = request.form.get('expiry_date') # এখানে ডেট রিসিভ হচ্ছে
+            
+            try:
+                new_client = {
+                    "api_key": api_key,
+                    "username": username,
+                    "email": email,
+                    "password": password,
+                    "client_name": client_name,
+                    "domain": domain,
+                    "plan": plan,
+                    "origin_ip": origin_ip,
+                    "expiry_date": expiry_date
+                }
+                CUSTOMERS_DB.append(new_client)
+                success_msg = f"Client '{client_name}' created successfully!"
+            except Exception as e:
+                error_msg = f"Error: {e}"
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -233,8 +258,9 @@ def admin_dashboard():
             {% endif %}
             
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client</h2>
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License Date</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <input type="hidden" name="action" value="create">
                     <input type="text" name="client_name" placeholder="Server Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="username" placeholder="Username" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="email" name="email" placeholder="Email" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
@@ -242,26 +268,31 @@ def admin_dashboard():
                     <input type="text" name="domain" placeholder="domain.com (Proxy path)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="api_key" placeholder="API Key (Unique)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="origin_ip" placeholder="Origin URL (https://mysite.com)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-[10px] text-slate-400">License Expiry Date:</label>
+                        <input type="date" name="expiry_date" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs text-slate-200">
+                    </div>
+                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs md:col-span-3">
                         <option>Standard</option>
                         <option>Enterprise</option>
                     </select>
-                    <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Save & Create</button>
+                    <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Save & Create License</button>
                 </form>
             </div>
 
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Registered Clients / Servers</h2>
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Registered Clients / Licenses</h2>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs border-collapse">
                         <thead>
                             <tr class="border-b border-slate-800 text-slate-400 uppercase bg-slate-950">
                                 <th class="p-3">Name</th>
                                 <th class="p-3">Username</th>
-                                <th class="p-3">Email</th>
                                 <th class="p-3">Domain</th>
                                 <th class="p-3">Origin URL</th>
+                                <th class="p-3">Expiry Date</th>
                                 <th class="p-3">API Key</th>
+                                <th class="p-3 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-800">
@@ -269,10 +300,19 @@ def admin_dashboard():
                             <tr>
                                 <td class="p-3 font-semibold">{{ c.client_name }}</td>
                                 <td class="p-3 text-cyan-400">{{ c.username }}</td>
-                                <td class="p-3 text-slate-300">{{ c.email }}</td>
                                 <td class="p-3 text-cyan-400">{{ c.domain }}</td>
                                 <td class="p-3 text-slate-400 truncate max-w-xs">{{ c.origin_ip }}</td>
+                                <td class="p-3 text-amber-400 font-semibold">{{ c.expiry_date }}</td>
                                 <td class="p-3 font-mono text-slate-400">{{ c.api_key }}</td>
+                                <td class="p-3 text-center">
+                                    <form method="POST" onsubmit="return confirm('Are you sure you want to delete this license?');" style="display:inline;">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="api_key" value="{{ c.api_key }}">
+                                        <button type="submit" class="bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white px-2.5 py-1 rounded transition text-[10px]">
+                                            <i class="fa-solid fa-trash mr-1"></i> Delete
+                                        </button>
+                                    </form>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -306,6 +346,7 @@ def client_login():
         if logged_client:
             session['client_name'] = logged_client['client_name']
             session['client_domain'] = logged_client['domain']
+            session['client_expiry'] = logged_client.get('expiry_date', 'N/A')
             return redirect(url_for('client_dashboard'))
         else:
             error = "Invalid Credentials or API Key"
@@ -339,6 +380,7 @@ def client_dashboard():
     
     client_name = session.get('client_name')
     client_domain = session.get('client_domain')
+    client_expiry = session.get('client_expiry')
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -354,8 +396,9 @@ def client_dashboard():
         </nav>
         <main class="p-6 max-w-4xl mx-auto space-y-6">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3">
-                <h2 class="text-lg font-bold text-cyan-400">Proxy Gateway Link</h2>
-                <p class="text-xs text-slate-400">Your protected proxy endpoint:</p>
+                <h2 class="text-lg font-bold text-cyan-400">License Status & Proxy Link</h2>
+                <p class="text-xs text-slate-400">License Expiry Date: <span class="text-amber-400 font-bold">{{ client_expiry }}</span></p>
+                <p class="text-xs text-slate-400 mt-2">Your protected proxy endpoint:</p>
                 <code class="bg-slate-950 p-3 rounded block text-xs text-cyan-300 font-mono">https://<span id="hostName"></span>/proxy/{{ client_domain }}/path</code>
             </div>
         </main>
@@ -364,7 +407,7 @@ def client_dashboard():
         </script>
     </body>
     </html>
-    """, client_name=client_name, client_domain=client_domain)
+    """, client_name=client_name, client_domain=client_domain, client_expiry=client_expiry)
 
 @app.route('/client/logout')
 def client_logout():
