@@ -135,7 +135,7 @@ def reverse_proxy(full_path):
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home) with Images & Social Links ---
+# --- Landing Page (Home) with Guaranteed Online Images & Discord ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -165,21 +165,21 @@ def landing_page():
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
 
-        <!-- Security Images Section (Fallback handled if image fails to load) -->
+        <!-- Security Infrastructure Images Section (Using Fast & Reliable CDN URLs) -->
         <section class="max-w-6xl mx-auto px-6 py-10 space-y-6 text-center">
             <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure & Overview</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
-                    <img src="/static/images (6).jpeg" alt="Cloud Security Server" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-cloud-shield text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Cloud Security Server</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&auto=format&fit=crop&q=80" alt="Cloud Security Server" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
-                    <img src="/static/images (5).jpeg" alt="Network Firewall Wall" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-firewall text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Network Firewall</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80" alt="Network Firewall Wall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
-                    <img src="/static/images (4).jpeg" alt="Malware Defense" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-shield-virus text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Malware Defense</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80" alt="Malware Defense" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
-                    <img src="/static/images (3).jpeg" alt="Traffic Routing Firewall" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-route text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Traffic Routing</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <img src="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&auto=format&fit=crop&q=80" alt="Traffic Routing Firewall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
             </div>
         </section>
@@ -258,7 +258,7 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Social Media Links Section (Discord Added) -->
+        <!-- Social Media & Discord Section -->
         <section class="max-w-4xl mx-auto px-6 py-10 text-center">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 class="text-lg font-bold text-cyan-400">Connect With Me</h3>
