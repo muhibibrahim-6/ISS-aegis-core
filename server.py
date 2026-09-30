@@ -8,7 +8,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট (এখানে domains একটি লিস্ট হিসেবে থাকবে)
+# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -16,9 +16,9 @@ CUSTOMERS_DB = [
         "email": "admin@firewall.com",
         "password": "muhib5869@",
         "client_name": "My Main Server",
-        "domains": ["mysite.com"],
+        "domains": ["iss-antivirus-cloud.onrender.com"],
         "plan": "Enterprise",
-        "origin_ip": "https://your-actual-website.com",
+        "origin_ip": "https://iss-antivirus-cloud.onrender.com",
         "expiry_date": "2027-12-31"
     }
 ]
@@ -87,7 +87,7 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route ---
+# --- Reverse Proxy Route (Compressed Data Fix Included) ---
 @app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy(full_path):
     parts = full_path.split('/', 1)
@@ -96,7 +96,6 @@ def reverse_proxy(full_path):
 
     matched_client = None
     for c in CUSTOMERS_DB:
-        # ডোমেইন লিস্টের মধ্যে যেকোনো একটি ম্যাচ করলেই পাস করবে
         if any(client_domain.lower() in d.lower() or d.lower() in client_domain.lower() for d in c['domains']):
             matched_client = c
             break
@@ -116,18 +115,23 @@ def reverse_proxy(full_path):
     origin_url = matched_client['origin_ip']
     target_url = f"{origin_url.rstrip('/')}/{subpath}"
     try:
+        req_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'accept-encoding']}
+        
         resp = requests.request(
             method=request.method,
             url=target_url,
-            headers={key: value for (key, value) in request.headers if key != 'Host'},
+            headers=req_headers,
             data=request.get_data(),
             cookies=request.cookies,
             allow_redirects=False,
             timeout=15
         )
+        
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
-        return Response(resp.content, resp.status_code, headers)
+        
+        content = resp.content
+        return Response(content, resp.status_code, headers)
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
@@ -160,34 +164,6 @@ def landing_page():
             <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Ultimate Defense for Your <span class="text-cyan-400">Web Servers & Infrastructure</span></h1>
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
-
-        <!-- Gallery Section -->
-        <section class="max-w-7xl mx-auto px-6 py-8">
-            <h2 class="text-xl font-bold text-center text-cyan-400 mb-8"><i class="fa-solid fa-camera mr-2"></i> Infrastructure & Threat Defense Gallery</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-cyan-500/50 transition">
-                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
-                        <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80" alt="Cloud" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
-                    </div>
-                    <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-cloud-shield mr-1"></i> Cloud Security Topology</h3>
-                    <p class="text-xs text-slate-400">Real-time threat monitoring and robust cloud infrastructure routing protection nodes.</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-blue-500/50 transition">
-                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
-                        <img src="https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?auto=format&fit=crop&w=600&q=80" alt="Firewall" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
-                    </div>
-                    <h3 class="text-sm font-bold text-blue-400"><i class="fa-solid fa-shield-halved mr-1"></i> Perimeter Firewall Guard</h3>
-                    <p class="text-xs text-slate-400">Encrypted perimeter brick wall defense mechanism filtering incoming malicious data packets.</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-purple-500/50 transition">
-                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
-                        <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80" alt="Malware" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
-                    </div>
-                    <h3 class="text-sm font-bold text-purple-400"><i class="fa-solid fa-virus-slash mr-1"></i> Malware Shield Protection</h3>
-                    <p class="text-xs text-slate-400">Advanced automated quarantine preventing payload injections, ransomware, and exploits.</p>
-                </div>
-            </div>
-        </section>
 
         <!-- Subscription Pricing Section -->
         <section class="max-w-6xl mx-auto px-6 py-16 space-y-10">
@@ -490,7 +466,7 @@ def client_login():
     </html>
     """, error=error)
 
-# --- Client Dashboard with Dynamic Domain Input Boxes Based on Plan ---
+# --- Client Dashboard ---
 @app.route('/client/dashboard', methods=['GET', 'POST'])
 def client_dashboard():
     username = session.get('client_username')
@@ -507,13 +483,10 @@ def client_dashboard():
         return redirect(url_for('client_login'))
 
     success_msg = None
-    
-    # প্ল্যান অনুযায়ী ডোমেইনের লিমিট নির্ধারণ (Standard = 1, Professional = 5, Enterprise = 10)
     limit_map = {"Standard": 1, "Professional": 5, "Enterprise": 10}
     max_slots = limit_map.get(current_client['plan'], 1)
 
     if request.method == 'POST':
-        # ফর্ম থেকে ডোমেইনগুলো সংগ্রহ করা
         new_domains = []
         for i in range(max_slots):
             val = request.form.get(f'domain_{i}')
@@ -541,7 +514,6 @@ def client_dashboard():
             <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>
             {% endif %}
 
-            <!-- License Info Box -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
                 <div class="flex justify-between items-center">
                     <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-id-card mr-2"></i> Subscription Details</h2>
@@ -555,7 +527,6 @@ def client_dashboard():
                 </div>
             </div>
 
-            <!-- Dynamic Domain Configuration Form -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4 shadow-lg">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-globe mr-2"></i> Configure Your Domains ({{ max_slots }} Slots Available)</h2>
                 <p class="text-xs text-slate-400">Your current plan allows you to manage up to {{ max_slots }} domain(s) for WAF proxy routing.</p>
@@ -573,7 +544,6 @@ def client_dashboard():
                 </form>
             </div>
 
-            <!-- Proxy Endpoint Guide -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-link mr-2"></i> Proxy Routing URL Format</h2>
                 <p class="text-xs text-slate-400">You can route your traffic through any of your configured active domains using this pattern:</p>
