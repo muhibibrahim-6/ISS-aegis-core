@@ -8,7 +8,6 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -87,7 +86,6 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route ---
 @app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy(full_path):
     parts = full_path.split('/', 1)
@@ -130,7 +128,7 @@ def reverse_proxy(full_path):
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page ---
+# --- Updated Home / Landing Page ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -138,16 +136,145 @@ def landing_page():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Aegis Core - WAF Security</title>
+        <title>Aegis Core - Advanced Web Application Firewall</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
-    <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center h-screen space-y-4">
-        <h1 class="text-3xl font-bold text-cyan-400">🛡️ Aegis Core WAF Active</h1>
-        <p class="text-slate-400 text-sm">Protected Web Application Firewall Gateway</p>
-        <div class="space-x-4">
-            <a href="/client/login" class="bg-slate-800 border border-slate-700 px-4 py-2 rounded text-xs text-slate-200">Client Login</a>
-            <a href="/admin/login" class="bg-cyan-500 font-bold px-4 py-2 rounded text-xs text-slate-950">Admin Login</a>
-        </div>
+    <body class="bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
+        <!-- Navbar -->
+        <nav class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-shield-cat text-cyan-400 text-xl"></i>
+                <span class="font-bold text-lg tracking-wider text-cyan-400">AEGIS CORE WAF</span>
+            </div>
+            <div class="space-x-4">
+                <a href="/client/login" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Client Login</a>
+                <a href="/admin/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded text-xs transition shadow-lg shadow-cyan-500/20">Admin Portal</a>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <header class="max-w-6xl mx-auto px-6 py-16 text-center space-y-6">
+            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Next-Gen Cybersecurity Protection</span>
+            <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Ultimate Defense for Your <span class="text-cyan-400">Web Servers & Infrastructure</span></h1>
+            <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
+        </header>
+
+        <!-- Image Gallery / Security Showcase Section -->
+        <section class="max-w-7xl mx-auto px-6 py-8">
+            <h2 class="text-xl font-bold text-center text-cyan-400 mb-8"><i class="fa-solid fa-camera mr-2"></i> Infrastructure & Threat Defense Gallery</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Card 1 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-cyan-500/50 transition">
+                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
+                        <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80" alt="Cloud Network Security" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+                    </div>
+                    <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-cloud-shield mr-1"></i> Cloud Security Topology</h3>
+                    <p class="text-xs text-slate-400">Real-time threat monitoring and robust cloud infrastructure routing protection nodes.</p>
+                </div>
+                <!-- Card 2 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-blue-500/50 transition">
+                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
+                        <img src="https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?auto=format&fit=crop&w=600&q=80" alt="Perimeter Firewall" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+                    </div>
+                    <h3 class="text-sm font-bold text-blue-400"><i class="fa-solid fa-shield-halved mr-1"></i> Perimeter Firewall Guard</h3>
+                    <p class="text-xs text-slate-400">Encrypted perimeter brick wall defense mechanism filtering incoming malicious data packets.</p>
+                </div>
+                <!-- Card 3 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl p-4 space-y-3 hover:border-purple-500/50 transition">
+                    <div class="h-48 rounded-lg overflow-hidden border border-slate-800 relative group">
+                        <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80" alt="Malware Shield" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+                    </div>
+                    <h3 class="text-sm font-bold text-purple-400"><i class="fa-solid fa-virus-slash mr-1"></i> Malware Shield Protection</h3>
+                    <p class="text-xs text-slate-400">Advanced automated quarantine preventing payload injections, ransomware, and exploits.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Subscription Pricing Section -->
+        <section class="max-w-6xl mx-auto px-6 py-16 space-y-10">
+            <div class="text-center space-y-3">
+                <h2 class="text-2xl md:text-3xl font-bold text-white">Flexible <span class="text-cyan-400">Subscription Plans</span></h2>
+                <p class="text-slate-400 text-xs md:text-sm">Choose the right security tier tailored for your personal project, business, or enterprise infrastructure.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Standard Plan -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition shadow-xl">
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-cyan-400">Standard</h3>
+                            <span class="bg-cyan-500/10 text-cyan-400 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">Basic</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Ideal for personal blogs and small portfolio websites.</p>
+                        <div class="py-2 border-y border-slate-800 space-y-1">
+                            <div class="text-2xl font-extrabold text-white">$15 <span class="text-xs font-normal text-slate-400">/ month</span></div>
+                            <div class="text-xs text-amber-400 font-semibold">Or $150 / yearly (Save $30)</div>
+                        </div>
+                        <ul class="space-y-2.5 text-xs text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> 1 Web Domain Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Basic SQLi & XSS Filtering</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Standard Reverse Proxy</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Community Support</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold py-2.5 rounded text-xs text-center transition block">Get Started</a>
+                </div>
+
+                <!-- Professional Plan -->
+                <div class="bg-slate-900 border border-cyan-500/80 rounded-2xl p-6 space-y-6 flex flex-col justify-between relative shadow-2xl shadow-cyan-500/10">
+                    <div class="absolute -top-3 left-1/2 -transform -translate-x-1/2 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-full uppercase tracking-wider">Most Popular</div>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-cyan-400">Professional</h3>
+                            <span class="bg-cyan-500/10 text-cyan-400 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">Pro</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Perfect for growing e-commerce platforms and startups.</p>
+                        <div class="py-2 border-y border-slate-800 space-y-1">
+                            <div class="text-2xl font-extrabold text-white">$45 <span class="text-xs font-normal text-slate-400">/ month</span></div>
+                            <div class="text-xs text-amber-400 font-semibold">Or $450 / yearly (Save $90)</div>
+                        </div>
+                        <ul class="space-y-2.5 text-xs text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Up to 5 Domains Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Advanced WAF Rules & AI Shield</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Real-time IP Auto-blocking</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Priority 24/7 Email Support</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded text-xs text-center transition block">Get Started</a>
+                </div>
+
+                <!-- Enterprise Plan -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition shadow-xl">
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-cyan-400">Enterprise</h3>
+                            <span class="bg-cyan-500/10 text-cyan-400 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">Ultimate</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Designed for large corporate networks and high-traffic servers.</p>
+                        <div class="py-2 border-y border-slate-800 space-y-1">
+                            <div class="text-2xl font-extrabold text-white">$120 <span class="text-xs font-normal text-slate-400">/ month</span></div>
+                            <div class="text-xs text-amber-400 font-semibold">Or $1,200 / yearly (Save $240)</div>
+                        </div>
+                        <ul class="space-y-2.5 text-xs text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Unlimited Domains Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Custom Rule Engine & DDoS Shield</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Dedicated Account Manager</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Instant Phone & Live Chat Support</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold py-2.5 rounded text-xs text-center transition block">Get Started</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+            &copy; 2026 Aegis Core WAF Security System. All rights reserved.
+        </footer>
     </body>
     </html>
     """)
@@ -186,7 +313,7 @@ def admin_login():
     </html>
     """, error=error)
 
-# --- Admin Dashboard with Security Graphics Gallery ---
+# --- Admin Dashboard ---
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 def admin_dashboard():
     if not session.get('is_admin'):
@@ -244,7 +371,10 @@ def admin_dashboard():
     <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
             <h1 class="font-bold text-cyan-400">AEGIS CORE • ADMIN PANEL</h1>
-            <a href="/admin/logout" class="text-xs text-red-400 hover:underline">Logout</a>
+            <div class="space-x-4">
+                <a href="/" target="_blank" class="text-xs text-cyan-400 hover:underline">View Website</a>
+                <a href="/admin/logout" class="text-xs text-red-400 hover:underline">Logout</a>
+            </div>
         </nav>
         <main class="p-6 max-w-7xl mx-auto space-y-6">
             {% if success_msg %}
@@ -254,31 +384,6 @@ def admin_dashboard():
             <div class="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded text-sm">{{ error_msg }}</div>
             {% endif %}
             
-            <!-- Security Graphics & Infrastructure Banner Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
-                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
-                        <div class="absolute inset-0 bg-cyan-500/15 flex items-center justify-center font-mono text-xs text-cyan-300">Cloud Shield & Server Network</div>
-                    </div>
-                    <h3 class="text-xs font-bold text-cyan-400"><i class="fa-solid fa-cloud-shield mr-1"></i> Cloud Security Topology</h3>
-                    <p class="text-[11px] text-slate-400">Real-time threat monitoring and cloud infrastructure protection node.</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
-                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
-                        <div class="absolute inset-0 bg-blue-500/15 flex items-center justify-center font-mono text-xs text-blue-300">Perimeter Firewall Wall</div>
-                    </div>
-                    <h3 class="text-xs font-bold text-blue-400"><i class="fa-solid fa-shield-halved mr-1"></i> Perimeter Firewall Guard</h3>
-                    <p class="text-[11px] text-slate-400">Encrypted perimeter brick wall defense mechanism filtering incoming attacks.</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
-                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
-                        <div class="absolute inset-0 bg-purple-500/15 flex items-center justify-center font-mono text-xs text-purple-300">Malware & Virus Block</div>
-                    </div>
-                    <h3 class="text-xs font-bold text-purple-400"><i class="fa-solid fa-virus-slash mr-1"></i> Malware Shield Protection</h3>
-                    <p class="text-[11px] text-slate-400">Advanced automated quarantine preventing payload injections and malware.</p>
-                </div>
-            </div>
-
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License Date</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -296,6 +401,7 @@ def admin_dashboard():
                     </div>
                     <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs md:col-span-3">
                         <option>Standard</option>
+                        <option>Professional</option>
                         <option>Enterprise</option>
                     </select>
                     <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Save & Create License</button>
@@ -311,7 +417,7 @@ def admin_dashboard():
                                 <th class="p-3">Name</th>
                                 <th class="p-3">Username</th>
                                 <th class="p-3">Domain</th>
-                                <th class="p-3">Origin URL</th>
+                                <th class="p-3">Plan</th>
                                 <th class="p-3">Expiry Date</th>
                                 <th class="p-3">API Key</th>
                                 <th class="p-3 text-center">Action</th>
@@ -323,7 +429,7 @@ def admin_dashboard():
                                 <td class="p-3 font-semibold">{{ c.client_name }}</td>
                                 <td class="p-3 text-cyan-400">{{ c.username }}</td>
                                 <td class="p-3 text-cyan-400">{{ c.domain }}</td>
-                                <td class="p-3 text-slate-400 truncate max-w-xs">{{ c.origin_ip }}</td>
+                                <td class="p-3 text-purple-400 font-semibold">{{ c.plan }}</td>
                                 <td class="p-3 text-amber-400 font-semibold">{{ c.expiry_date }}</td>
                                 <td class="p-3 font-mono text-slate-400">{{ c.api_key }}</td>
                                 <td class="p-3 text-center">
