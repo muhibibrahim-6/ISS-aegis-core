@@ -165,21 +165,21 @@ def landing_page():
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
 
-        <!-- Security Images Section -->
+        <!-- Security Images Section (Fallback handled if image fails to load) -->
         <section class="max-w-6xl mx-auto px-6 py-10 space-y-6 text-center">
             <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure & Overview</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="/static/images (6).jpeg" alt="Cloud Security Server" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
+                    <img src="/static/images (6).jpeg" alt="Cloud Security Server" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-cloud-shield text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Cloud Security Server</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="/static/images (5).jpeg" alt="Network Firewall Wall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
+                    <img src="/static/images (5).jpeg" alt="Network Firewall Wall" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-firewall text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Network Firewall</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="/static/images (4).jpeg" alt="Malware Defense" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
+                    <img src="/static/images (4).jpeg" alt="Malware Defense" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-shield-virus text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Malware Defense</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
                 </div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="/static/images (3).jpeg" alt="Traffic Routing Firewall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center justify-center h-44">
+                    <img src="/static/images (3).jpeg" alt="Traffic Routing Firewall" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fa-solid fa-route text-cyan-400 text-4xl mb-2\'></i><span class=\'text-xs text-slate-400 font-semibold\'>Traffic Routing</span>';" class="w-full h-32 object-cover rounded-lg border border-slate-800">
                 </div>
             </div>
         </section>
@@ -258,15 +258,16 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Social Media Links Section -->
+        <!-- Social Media Links Section (Discord Added) -->
         <section class="max-w-4xl mx-auto px-6 py-10 text-center">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 class="text-lg font-bold text-cyan-400">Connect With Me</h3>
                 <div class="flex flex-wrap justify-center gap-6 text-sm">
-                    <a href="https://www.linkedin.com/in/Muhib%20Ibrahim" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-linkedin text-cyan-400 mr-1.5"></i> LinkedIn: Muhib Ibrahim</a>
-                    <a href="https://www.instagram.com/mrshadow6000" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-instagram text-pink-400 mr-1.5"></i> Instagram: mrshadow6000</a>
-                    <a href="https://www.youtube.com/@Muhib%20Ibrahim" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-youtube text-red-500 mr-1.5"></i> YouTube: Muhib Ibrahim</a>
-                    <a href="https://medium.com/@muhibibra" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-medium text-white mr-1.5"></i> Medium: muhibibra</a>
+                    <a href="https://www.linkedin.com/in/Muhib%20Ibrahim" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-linkedin text-cyan-400 mr-1.5"></i> LinkedIn</a>
+                    <a href="https://www.instagram.com/mrshadow6000" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-instagram text-pink-400 mr-1.5"></i> Instagram</a>
+                    <a href="https://www.youtube.com/@Muhib%20Ibrahim" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-youtube text-red-500 mr-1.5"></i> YouTube</a>
+                    <a href="https://medium.com/@muhibibra" target="_blank" class="text-slate-300 hover:text-cyan-400 transition font-medium"><i class="fa-brands fa-medium text-white mr-1.5"></i> Medium</a>
+                    <a href="https://discord.gg/K8UMVXThg" target="_blank" class="text-slate-300 hover:text-indigo-400 transition font-medium"><i class="fa-brands fa-discord text-indigo-400 mr-1.5"></i> Discord</a>
                 </div>
             </div>
         </section>
