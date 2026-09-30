@@ -2,87 +2,25 @@ import os
 import time
 import re
 import requests
-from urllib.parse import urlparse
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-try:
-    import psycopg2
-except ImportError:
-    psycopg2 = None
+# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট (ডাটাবেজ ছাড়া চালানোর জন্য)
+CUSTOMERS_DB = [
+    {
+        "api_key": "aegis_live_key_999",
+        "username": "ibr@him",
+        "email": "admin@firewall.com",
+        "password": "muhib5869@",
+        "client_name": "My Main Server",
+        "domain": "mysite.com",
+        "plan": "Enterprise",
+        "origin_ip": "https://your-actual-website.com"
+    }
+]
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-def get_db_connection():
-    if not DATABASE_URL or not psycopg2:
-        return None
-    try:
-        url = urlparse(DATABASE_URL)
-        conn = psycopg2.connect(
-            database=url.path[1:],
-            user=url.username,
-            password=url.password,
-            host=url.hostname,
-            port=url.port
-        )
-        return conn
-    except Exception as e:
-        print("Database connection error:", e)
-        return None
-
-def init_db():
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            # ক্লায়েন্ট টেবিল তৈরি
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS customers (
-                    api_key TEXT PRIMARY KEY,
-                    username TEXT,
-                    email TEXT,
-                    password TEXT,
-                    client_name TEXT,
-                    domain TEXT,
-                    plan TEXT,
-                    origin_ip TEXT
-                )
-            ''')
-            # সিকিউরিটি লগ টেবিল
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS security_logs (
-                    id SERIAL PRIMARY KEY,
-                    timestamp TEXT,
-                    ip TEXT,
-                    path TEXT,
-                    threat TEXT,
-                    ai_patch TEXT,
-                    client_domain TEXT
-                )
-            ''')
-            conn.commit()
-            
-            # ডিফল্ট অ্যাডমিন/টেস্ট এন্ট্রি না থাকলে তৈরি করা
-            cursor.execute("SELECT COUNT(*) FROM customers WHERE api_key = 'aegis_live_key_999'")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute(
-                    "INSERT INTO customers (api_key, username, email, password, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    ("aegis_live_key_999", "ibr@him", "admin@firewall.com", "muhib5869@", "My Main Server", "mysite.com", "Enterprise", "https://your-actual-website.com")
-                )
-                conn.commit()
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            print("DB Init Error:", e)
-
-try:
-    init_db()
-except Exception as e:
-    print("Database initialization skipped:", e)
-
-# আপনার ফিক্সড মাস্টার অ্যাডমিন ক্রিপডেনশিয়াল
 ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
@@ -155,18 +93,10 @@ def reverse_proxy(full_path):
     subpath = parts[1] if len(parts) > 1 else ""
 
     origin_url = None
-    try:
-        conn = get_db_connection()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT origin_ip FROM customers WHERE domain ILIKE %s OR domain ILIKE %s", (client_domain, f"%{client_domain}%"))
-            row = cursor.fetchone()
-            if row:
-                origin_url = row[0]
-            cursor.close()
-            conn.close()
-    except Exception as e:
-        print("Proxy DB Error:", e)
+    for c in CUSTOMERS_DB:
+        if c['domain'].lower() == client_domain.lower() or client_domain.lower() in c['domain'].lower():
+            origin_url = c['origin_ip']
+            break
 
     if not origin_url:
         return jsonify({"error": f"Target Domain '{client_domain}' Not Registered in Aegis Core"}), 404
@@ -264,33 +194,21 @@ def admin_dashboard():
         plan = request.form.get('plan')
         
         try:
-            conn = get_db_connection()
-            if not conn:
-                error_msg = "Database connection failed!"
-            else:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO customers (api_key, username, email, password, client_name, domain, plan, origin_ip) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (api_key, username, email, password, client_name, domain, plan, origin_ip)
-                )
-                conn.commit()
-                cursor.close()
-                conn.close()
-                success_msg = f"Client '{client_name}' created successfully!"
+            # নতুন ক্লায়েন্ট সরাসরি লিস্টে যুক্ত করা হচ্ছে
+            new_client = {
+                "api_key": api_key,
+                "username": username,
+                "email": email,
+                "password": password,
+                "client_name": client_name,
+                "domain": domain,
+                "plan": plan,
+                "origin_ip": origin_ip
+            }
+            CUSTOMERS_DB.append(new_client)
+            success_msg = f"Client '{client_name}' created successfully!"
         except Exception as e:
             error_msg = f"Error: {e}"
-
-    customers = []
-    try:
-        conn = get_db_connection()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT api_key, username, email, client_name, domain, plan, origin_ip FROM customers")
-            customers = cursor.fetchall()
-            cursor.close()
-            conn.close()
-    except Exception as e:
-        print("Admin DB Error:", e)
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -349,12 +267,12 @@ def admin_dashboard():
                         <tbody class="divide-y divide-slate-800">
                             {% for c in customers %}
                             <tr>
-                                <td class="p-3 font-semibold">{{ c[3] }}</td>
-                                <td class="p-3 text-cyan-400">{{ c[1] }}</td>
-                                <td class="p-3 text-slate-300">{{ c[2] }}</td>
-                                <td class="p-3 text-cyan-400">{{ c[4] }}</td>
-                                <td class="p-3 text-slate-400 truncate max-w-xs">{{ c[6] }}</td>
-                                <td class="p-3 font-mono text-slate-400">{{ c[0] }}</td>
+                                <td class="p-3 font-semibold">{{ c.client_name }}</td>
+                                <td class="p-3 text-cyan-400">{{ c.username }}</td>
+                                <td class="p-3 text-slate-300">{{ c.email }}</td>
+                                <td class="p-3 text-cyan-400">{{ c.domain }}</td>
+                                <td class="p-3 text-slate-400 truncate max-w-xs">{{ c.origin_ip }}</td>
+                                <td class="p-3 font-mono text-slate-400">{{ c.api_key }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -364,7 +282,7 @@ def admin_dashboard():
         </main>
     </body>
     </html>
-    """, success_msg=success_msg, error_msg=error_msg, customers=customers)
+    """, success_msg=success_msg, error_msg=error_msg, customers=CUSTOMERS_DB)
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -378,24 +296,20 @@ def client_login():
     if request.method == 'POST':
         identity = request.form.get('identity')
         password = request.form.get('password')
-        try:
-            conn = get_db_connection()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT client_name, domain FROM customers WHERE (username = %s OR email = %s OR api_key = %s) AND password = %s",
-                    (identity, identity, identity, password)
-                )
-                client = cursor.fetchone()
-                cursor.close()
-                conn.close()
-                if client:
-                    session['client_name'] = client[0]
-                    session['client_domain'] = client[1]
-                    return redirect(url_for('client_dashboard'))
-        except Exception as e:
-            print("Login error:", e)
-        error = "Invalid Credentials or API Key"
+        
+        logged_client = None
+        for c in CUSTOMERS_DB:
+            if (c['username'] == identity or c['email'] == identity or c['api_key'] == identity) and c['password'] == password:
+                logged_client = c
+                break
+                
+        if logged_client:
+            session['client_name'] = logged_client['client_name']
+            session['client_domain'] = logged_client['domain']
+            return redirect(url_for('client_dashboard'))
+        else:
+            error = "Invalid Credentials or API Key"
+            
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
