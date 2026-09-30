@@ -8,7 +8,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট (এক্সপায়ারি ডেট সহ)
+# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -87,7 +87,7 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route (License Expiry Check সহ) ---
+# --- Reverse Proxy Route ---
 @app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy(full_path):
     parts = full_path.split('/', 1)
@@ -103,7 +103,6 @@ def reverse_proxy(full_path):
     if not matched_client:
         return jsonify({"error": f"Target Domain '{client_domain}' Not Registered in Aegis Core"}), 404
         
-    # লাইসেন্সের মেয়াদ শেষ হয়ে গেছে কিনা চেক করা
     expiry_date_str = matched_client.get('expiry_date')
     if expiry_date_str:
         try:
@@ -187,7 +186,7 @@ def admin_login():
     </html>
     """, error=error)
 
-# --- Admin Dashboard, Client Creator & Delete Option ---
+# --- Admin Dashboard with Security Graphics Gallery ---
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 def admin_dashboard():
     if not session.get('is_admin'):
@@ -199,14 +198,12 @@ def admin_dashboard():
     if request.method == 'POST':
         action = request.form.get('action')
         
-        # ক্লায়েন্ট ডিলিট করার লজিক
         if action == 'delete':
             api_key_to_delete = request.form.get('api_key')
             global CUSTOMERS_DB
             CUSTOMERS_DB = [c for c in CUSTOMERS_DB if c['api_key'] != api_key_to_delete]
             success_msg = "Client/License deleted successfully!"
             
-        # নতুন ক্লায়েন্ট বা লাইসেন্স ক্রিয়েট করার লজিক
         elif action == 'create':
             client_name = request.form.get('client_name')
             username = request.form.get('username')
@@ -216,7 +213,7 @@ def admin_dashboard():
             api_key = request.form.get('api_key')
             origin_ip = request.form.get('origin_ip')
             plan = request.form.get('plan')
-            expiry_date = request.form.get('expiry_date') # এখানে ডেট রিসিভ হচ্ছে
+            expiry_date = request.form.get('expiry_date')
             
             try:
                 new_client = {
@@ -257,6 +254,31 @@ def admin_dashboard():
             <div class="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded text-sm">{{ error_msg }}</div>
             {% endif %}
             
+            <!-- Security Graphics & Infrastructure Banner Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
+                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-cyan-500/15 flex items-center justify-center font-mono text-xs text-cyan-300">Cloud Shield & Server Network</div>
+                    </div>
+                    <h3 class="text-xs font-bold text-cyan-400"><i class="fa-solid fa-cloud-shield mr-1"></i> Cloud Security Topology</h3>
+                    <p class="text-[11px] text-slate-400">Real-time threat monitoring and cloud infrastructure protection node.</p>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
+                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-blue-500/15 flex items-center justify-center font-mono text-xs text-blue-300">Perimeter Firewall Wall</div>
+                    </div>
+                    <h3 class="text-xs font-bold text-blue-400"><i class="fa-solid fa-shield-halved mr-1"></i> Perimeter Firewall Guard</h3>
+                    <p class="text-[11px] text-slate-400">Encrypted perimeter brick wall defense mechanism filtering incoming attacks.</p>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg p-3 space-y-2">
+                    <div class="h-36 bg-slate-950 rounded-lg flex items-center justify-center border border-slate-800/80 relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-purple-500/15 flex items-center justify-center font-mono text-xs text-purple-300">Malware & Virus Block</div>
+                    </div>
+                    <h3 class="text-xs font-bold text-purple-400"><i class="fa-solid fa-virus-slash mr-1"></i> Malware Shield Protection</h3>
+                    <p class="text-[11px] text-slate-400">Advanced automated quarantine preventing payload injections and malware.</p>
+                </div>
+            </div>
+
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License Date</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
