@@ -8,8 +8,8 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# ডিসকর্ড ওয়েহুক ইউআরএল (এখানে আপনার ডিসকর্ড চ্যানেলের ওয়েহুক লিংকটি দিন অথবা Render-এর Environment Variable-এ যোগ করুন)
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
+# আপনার দেওয়া ডিসকর্ড ওয়েহুক ইউআরএল সরাসরি এখানে যুক্ত করা হলো
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555088247137509379/YruglLjphIlnSc1718YSWF7mJnEiDJ-Zzc_7Gq01BTjX4LxFxCFZbCIKrv5A4dXAmkIP"
 
 def send_discord_alert(threat_type, client_ip, path):
     if not DISCORD_WEBHOOK_URL or DISCORD_WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE":
@@ -287,7 +287,7 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Social Media & Discord Community Section (Working Link Added) -->
+        <!-- Social Media & Discord Community Section -->
         <section class="max-w-4xl mx-auto px-6 py-10 text-center">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 class="text-lg font-bold text-cyan-400">Connect With Me</h3>
