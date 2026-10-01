@@ -8,6 +8,31 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
+# ডিসকর্ড ওয়েহুক ইউআরএল (এখানে আপনার ডিসকর্ড চ্যানেলের ওয়েহুক লিংকটি দিন অথবা Render-এর Environment Variable-এ যোগ করুন)
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "YOUR_DISCORD_WEBHOOK_URL_HERE")
+
+def send_discord_alert(threat_type, client_ip, path):
+    if not DISCORD_WEBHOOK_URL or DISCORD_WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE":
+        return
+    
+    payload = {
+        "embeds": [{
+            "title": "🚨 Aegis WAF - Security Threat Blocked!",
+            "color": 16711680, # লাল রঙ (Red)
+            "fields": [
+                {"name": "🛡️ Threat Type", "value": str(threat_type), "inline": True},
+                {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
+                {"name": "📂 Target Path", "value": str(path), "inline": False},
+                {"name": "⚡ Action Taken", "value": "IP Temporarily Blocked (5 Mins)", "inline": False}
+            ],
+            "timestamp": datetime.utcnow().isoformat()
+        }]
+    }
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Discord webhook error: {e}")
+
 # মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট
 CUSTOMERS_DB = [
     {
@@ -81,6 +106,10 @@ def aegis_firewall_middleware():
     if threat_type:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
+        
+        # ডিসকর্ডে ইনস্ট্যান্ট অ্যালার্ট পাঠানোর ফাংশন কল
+        send_discord_alert(threat_type, client_ip, path)
+        
         return jsonify({
             "error": "Web Application Firewall Triggered",
             "threat_detected": threat_type,
@@ -135,7 +164,7 @@ def reverse_proxy(full_path):
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home) with Guaranteed Online Images & Discord ---
+# --- Landing Page (Home) with Images & Discord Link ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -165,7 +194,7 @@ def landing_page():
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
 
-        <!-- Security Infrastructure Images Section (Using Fast & Reliable CDN URLs) -->
+        <!-- Security Infrastructure Images Section -->
         <section class="max-w-6xl mx-auto px-6 py-10 space-y-6 text-center">
             <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure & Overview</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -258,7 +287,7 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Social Media & Discord Section -->
+        <!-- Social Media & Discord Community Section (Working Link Added) -->
         <section class="max-w-4xl mx-auto px-6 py-10 text-center">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 class="text-lg font-bold text-cyan-400">Connect With Me</h3>
