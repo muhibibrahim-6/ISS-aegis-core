@@ -64,13 +64,12 @@ def smart_waf_protection():
     current_time = time.time()
     path = request.path
 
-    # এখানে আমরা সংজ্ঞায়িত করে দিচ্ছি ফায়ারওয়াল কোন রুটগুলোতে একটিভ থাকবে (যেমন প্রক্সি এবং ক্লায়েন্ট প্যানেল রুট)
-    # আপনি চাইলে এখানে আপনার দরকারমতো যেকোনো ডকুমেন্ট বা পাথ যুক্ত করতে পারেন
+    # এখানে আমরা সংজ্ঞায়িত করে দিচ্ছি ফায়ারওয়াল কোন রুটগুলোতে একটিভ থাকবে
     monitored_paths = ['/proxy', '/client/login', '/admin/dashboard']
     
     is_target_path = any(path.startswith(p) for p in monitored_paths)
     
-    # যদি রুটটি আমাদের মনিটরেড লিস্টে না থাকে, তবে ফায়ারওয়াল চেক করার দরকার নেই (স্মার্টলি বাইপাস হবে)
+    # যদি রুটটি আমাদের মনিটরেড লিস্টে না থাকে, তবে ফায়ারওয়াল চেক করার দরকার নেই
     if not is_target_path:
         return
 
@@ -292,10 +291,7 @@ def my_profile():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8"><title>Admin Login</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
+    <head><meta charset="UTF-8"><title>Admin Login</title><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center h-screen">
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
             <h2 class="text-xl font-bold text-cyan-400 text-center">Admin Portal</h2>
@@ -343,10 +339,7 @@ def admin_dashboard():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8"><title>Admin Dashboard</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
+    <head><meta charset="UTF-8"><title>Admin Dashboard</title><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
             <h1 class="font-bold text-cyan-400">AEGIS CORE • ADMIN PANEL</h1>
@@ -455,6 +448,6 @@ def client_logout():
     session.pop('client_username', None)
     return redirect(url_for('client_login'))
 
-if __name__ == 'main':
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
