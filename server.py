@@ -159,7 +159,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home with Images & Premium Plans) ---
+# --- Landing Page (Home with Images, Plans & Social Links) ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -167,7 +167,7 @@ def landing_page():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Aegis Core - Advanced Web Application Firewall & Plans</title>
+        <title>Aegis Core - Advanced Web Application Firewall</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
@@ -178,7 +178,7 @@ def landing_page():
                 <span class="font-bold text-lg tracking-wider text-cyan-400">AEGIS CORE WAF</span>
             </div>
             <div class="space-x-4">
-                <a href="#plans" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Pricing Plans</a>
+                <a href="#plans" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Pricing</a>
                 <a href="/client/login" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Client Login</a>
                 <a href="/my-profile" class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 font-bold px-4 py-2 rounded text-xs transition">My Profile</a>
             </div>
@@ -264,8 +264,15 @@ def landing_page():
             </div>
         </section>
 
-        <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-            &copy; 2026 Aegis Core WAF Security System. All rights reserved.
+        <!-- Social Links & Footer Section -->
+        <footer class="border-t border-slate-800 py-10 bg-slate-900/40 text-center space-y-4">
+            <div class="flex justify-center space-x-6 text-slate-400">
+                <a href="https://t.me/yourusername" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Telegram"><i class="fa-brands fa-telegram"></i></a>
+                <a href="https://discord.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Discord"><i class="fa-brands fa-discord"></i></a>
+                <a href="https://github.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="GitHub"><i class="fa-brands fa-github"></i></a>
+                <a href="https://twitter.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Twitter"><i class="fa-brands fa-x-twitter"></i></a>
+            </div>
+            <p class="text-xs text-slate-500">&copy; 2026 Aegis Core WAF Security System. All rights reserved.</p>
         </footer>
     </body>
     </html>
