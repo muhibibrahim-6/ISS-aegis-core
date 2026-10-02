@@ -25,7 +25,7 @@ def send_discord_alert(client_ip, threat_type, strikes, path):
             "title": "🚨 Aegis WAF - IP Blocked Due to Repeated Attacks",
             "color": 16711680,
             "fields": [
-                {"name": "🛡️️ Threat Type", "value": str(threat_type), "inline": True},
+                {"name": "🛡 Threat Type", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
                 {"name": "⚠️ Total Strikes", "value": f"{strikes} / {MAX_STRIKES}", "inline": True},
                 {"name": "📂 Target Path", "value": str(path), "inline": False},
@@ -65,7 +65,7 @@ def waf_protection():
     current_time = time.time()
     path = request.path
     
-    # স্ট্যাটিক ফাইল, ব্রাউজারের আইকন বা এডমিন প্যানেল বাইপাস করার জন্য
+    # স্ট্যাটিক ফাইল, ব্রাউজারের আইকন বা এডমিন/ক্লায়েন্ট প্যানেল বাইপাস করার জন্য
     if 'favicon.ico' in path or path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy'):
         return
 
@@ -159,7 +159,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home with Images) ---
+# --- Landing Page (Home with Images & Premium Plans) ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -167,7 +167,7 @@ def landing_page():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Aegis Core - Advanced Web Application Firewall</title>
+        <title>Aegis Core - Advanced Web Application Firewall & Plans</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
@@ -178,6 +178,7 @@ def landing_page():
                 <span class="font-bold text-lg tracking-wider text-cyan-400">AEGIS CORE WAF</span>
             </div>
             <div class="space-x-4">
+                <a href="#plans" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Pricing Plans</a>
                 <a href="/client/login" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Client Login</a>
                 <a href="/my-profile" class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 font-bold px-4 py-2 rounded text-xs transition">My Profile</a>
             </div>
@@ -189,20 +190,76 @@ def landing_page():
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
 
-        <section class="max-w-6xl mx-auto px-6 py-10 space-y-6 text-center">
-            <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure & Overview</h2>
+        <!-- Image Gallery Section -->
+        <section class="max-w-6xl mx-auto px-6 py-8 space-y-6 text-center">
+            <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure Overview</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&auto=format&fit=crop&q=80" alt="Cloud Security Server" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                    <img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&auto=format&fit=crop&q=80" alt="Cloud Security" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80" alt="Network Firewall Wall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                    <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80" alt="Network Wall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
                     <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80" alt="Malware Defense" class="w-full h-40 object-cover rounded-lg border border-slate-800">
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl">
-                    <img src="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&auto=format&fit=crop&q=80" alt="Traffic Routing Firewall" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                    <img src="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&auto=format&fit=crop&q=80" alt="Traffic Routing" class="w-full h-40 object-cover rounded-lg border border-slate-800">
+                </div>
+            </div>
+        </section>
+
+        <!-- Premium Plans & Pricing Section -->
+        <section id="plans" class="max-w-6xl mx-auto px-6 py-16 space-y-8">
+            <div class="text-center space-y-3">
+                <h2 class="text-3xl font-bold text-white">Choose Your <span class="text-cyan-400">Protection Plan</span></h2>
+                <p class="text-slate-400 text-sm">Flexible pricing plans designed to secure websites and applications of any scale.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Standard Plan -->
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition">
+                    <div class="space-y-4">
+                        <span class="text-xs bg-slate-800 text-cyan-400 px-3 py-1 rounded-full font-semibold">Standard Plan</span>
+                        <h3 class="text-2xl font-bold text-white">$19<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
+                        <p class="text-xs text-slate-400">Ideal for personal blogs and small portfolio websites.</p>
+                        <ul class="text-xs space-y-2 text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> 1 Domain Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Basic SQLi & XSS Defense</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Standard Reverse Proxy</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Standard</a>
+                </div>
+
+                <!-- Professional Plan -->
+                <div class="bg-slate-900 border border-cyan-500 p-8 rounded-2xl space-y-6 flex flex-col justify-between relative shadow-lg shadow-cyan-500/10">
+                    <div class="absolute -top-3 right-6 bg-cyan-500 text-slate-950 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase">Popular</div>
+                    <div class="space-y-4">
+                        <span class="text-xs bg-cyan-500/20 text-cyan-400 px-3 py-1 rounded-full font-semibold">Professional Plan</span>
+                        <h3 class="text-2xl font-bold text-white">$49<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
+                        <p class="text-xs text-slate-400">Perfect for growing business websites and apps.</p>
+                        <ul class="text-xs space-y-2 text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Up to 5 Domains Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Advanced Strike & IP Blocking</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Real-time Discord Alerts</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full block text-center bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Professional</a>
+                </div>
+
+                <!-- Enterprise Plan -->
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition">
+                    <div class="space-y-4">
+                        <span class="text-xs bg-slate-800 text-purple-400 px-3 py-1 rounded-full font-semibold">Enterprise Plan</span>
+                        <h3 class="text-2xl font-bold text-white">$99<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
+                        <p class="text-xs text-slate-400">Maximum protection for corporate high-traffic servers.</p>
+                        <ul class="text-xs space-y-2 text-slate-300">
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Up to 10 Domains Protected</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Custom WAF Rules & Shield</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> 24/7 Priority Support</li>
+                        </ul>
+                    </div>
+                    <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Enterprise</a>
                 </div>
             </div>
         </section>
@@ -245,8 +302,7 @@ def my_profile():
             <a href="/" class="text-xs text-cyan-400 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i> Back to Home</a>
         </div>
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
-            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-user-shield mr-2"></i> My Profile / Admin Portal</h2>
-            <p class="text-[11px] text-slate-400 text-center">Enter your master credentials to unlock the admin control panel.</p>
+            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-user-shield mr-2"></i> Admin Portal</h2>
             {% if error %}
             <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
             {% endif %}
@@ -265,8 +321,6 @@ def admin_dashboard():
         return redirect(url_for('my_profile'))
     
     success_msg = None
-    error_msg = None
-    
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'delete':
@@ -290,7 +344,7 @@ def admin_dashboard():
                 CUSTOMERS_DB.append(new_client)
                 success_msg = "Client created successfully!"
             except Exception as e:
-                error_msg = f"Error: {e}"
+                pass
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -315,7 +369,7 @@ def admin_dashboard():
             {% endif %}
             
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License Date</h2>
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <input type="hidden" name="action" value="create">
                     <input type="text" name="client_name" placeholder="Server Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
@@ -373,7 +427,7 @@ def admin_dashboard():
         </main>
     </body>
     </html>
-    """, success_msg=success_msg, error_msg=error_msg, customers=CUSTOMERS_DB)
+    """, success_msg=success_msg, customers=CUSTOMERS_DB)
 
 # --- Client Login ---
 @app.route('/client/login', methods=['GET', 'POST'])
