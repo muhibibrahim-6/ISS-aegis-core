@@ -1,19 +1,19 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template_string, request, Response, redirect, url_for, session, jsonify
 import time
 import requests
 
 app = Flask(__name__)
 app.secret_key = "your_secure_secret_key_here"  # আপনার সিক্রেট কি এখানে দিন
 
-# --- Global Databases & Configurations ---
+# --- Global Databases & Configurations for WAF & Clients ---
 BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300  # ৫ মিনিট ব্লক সময় (সেকেন্ডে)
 
-# ডিসকর্ড ওয়েহুক ইউআরএল (আপনার ডিসকর্ড ওয়েহুক লিংকটি এখানে বসাবেন)
+# ডিসকর্ড ওয়েহুক ইউআরএল (আপনার ডিসকর্ড ওয়েহুক লিংকটি এখানে বসানো আছে)
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1346765582967277638/7x_U4N_YOUR_WEBHOOK_URL_HERE"
 
-# কাস্টমার ডাটাবেস (ছবি, প্ল্যান, ডোমেন ও অন্যান্য তথ্যসহ)
+# কাস্টমার ডাটাবেস (আপনার ইউজার, পাসওয়ার্ড, প্ল্যান ও ডোমেনসহ)
 CUSTOMERS_DB = [
     {
         "id": 1,
@@ -90,7 +90,7 @@ def aegis_firewall_middleware():
     path = request.path
     
     # অ্যাডমিন, ক্লায়েন্ট প্যানেল বা প্রক্সি রুটগুলো ফায়ারওয়ালের বাইরে রাখা
-    if path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy/'):
+    if path.startswith('/admin') or path.startswith('/client') or path.startswith('/proxy/'):
         return
         
     # ব্লক করা আইপি চেক
@@ -121,30 +121,109 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Public Home Route ---
+# --- আপনার মূল হোমপেজ টেমপ্লেট (ছবি এবং সোশ্যাল মিডিয়া লিংকসহ) ---
+HOME_PAGE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ISS Antivirus Cloud & Firewall</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background-color: #0f172a; 
+            color: #fff; 
+            margin: 0; 
+            padding: 20px; 
+            text-align: center; 
+        }
+        h1 { color: #38bdf8; }
+        p { color: #94a3b8; }
+        .gallery { 
+            display: flex; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+            gap: 20px; 
+            margin: 30px 0; 
+        }
+        .gallery img { 
+            width: 300px; 
+            height: 180px; 
+            object-fit: cover; 
+            border-radius: 8px; 
+            border: 2px solid #3b82f6; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .social-links { 
+            margin-top: 40px; 
+            padding: 25px; 
+            background: #1e293b; 
+            border-radius: 12px; 
+            display: inline-block; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+        .social-links h3 { margin-top: 0; color: #f8fafc; }
+        .social-links a { 
+            color: #38bdf8; 
+            margin: 0 15px; 
+            text-decoration: none; 
+            font-size: 18px; 
+            font-weight: bold; 
+        }
+        .social-links a:hover { 
+            text-decoration: underline; 
+            color: #7dd3fc; 
+        }
+        .nav-buttons {
+            margin-bottom: 25px;
+        }
+        .nav-buttons a {
+            background-color: #38bdf8;
+            color: #0f172a;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 0 10px;
+        }
+        .nav-buttons a:hover { background-color: #0ea5e9; }
+    </style>
+</head>
+<body>
+
+    <div class="nav-buttons">
+        <a href="/client/login">Client Login</a>
+        <a href="/admin/login">Admin Portal</a>
+    </div>
+
+    <h1>Welcome to ISS Antivirus & Cloud Security</h1>
+    <p>Protecting your digital assets with advanced firewall & proxy routing.</p>
+
+    <!-- হোমপেজে সিকিউরিটি ছবিগুলো -->
+    <h2>Security Infrastructure & Overview</h2>
+    <div class="gallery">
+        <img src="/static/images (6).jpeg" alt="Cloud Security Server">
+        <img src="/static/images (5).jpeg" alt="Network Firewall Wall">
+        <img src="/static/images (4).jpeg" alt="Malware Defense">
+        <img src="/static/images (3).jpeg" alt="Traffic Routing Firewall">
+    </div>
+
+    <!-- সোশ্যাল মিডিয়া লিংকগুলো -->
+    <div class="social-links">
+        <h3>Connect With Me</h3>
+        <a href="https://www.linkedin.com/in/Muhib%20Ibrahim" target="_blank">LinkedIn</a>
+        <a href="https://www.instagram.com/mrshadow6000" target="_blank">Instagram</a>
+        <a href="https://www.youtube.com/@Muhib%20Ibrahim" target="_blank">YouTube</a>
+        <a href="https://medium.com/@muhibibra" target="_blank">Medium</a>
+    </div>
+
+</body>
+</html>
+"""
+
 @app.route('/')
 def home():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>ISS Antivirus Cloud - WAF Protected</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    </head>
-    <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center min-h-screen">
-        <div class="text-center space-y-4 p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-lg">
-            <h1 class="text-2xl font-bold text-cyan-400"><i class="fa-solid fa-shield-halved mr-2"></i>ISS Antivirus Cloud WAF</h1>
-            <p class="text-xs text-slate-400">System is active, secured and protected with advanced threat detection & Discord alerts.</p>
-            <div class="pt-4 flex justify-center space-x-4">
-                <a href="/client/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded text-xs font-bold transition">Client Login</a>
-                <a href="/admin/login" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded text-xs font-bold transition">Admin Portal</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """)
+    return render_template_string(HOME_PAGE_TEMPLATE)
 
 # --- Client Login Route ---
 @app.route('/client/login', methods=['GET', 'POST'])
@@ -182,12 +261,15 @@ def client_login():
                 <input type="password" name="password" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200 focus:outline-none focus:border-cyan-500 mt-1">
             </div>
             <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded text-xs transition">লগইন করুন</button>
+            <div class="text-center pt-2">
+                <a href="/" class="text-xs text-slate-400 hover:underline">← হোমপেজে ফিরে যান</a>
+            </div>
         </form>
     </body>
     </html>
     """, error=error)
 
-# --- Client Dashboard (Complete with Avatars, Subscriptions, Domain Slots & Proxy URLs) ---
+# --- Client Dashboard (Personalized & Secure) ---
 @app.route('/client/dashboard', methods=['GET', 'POST'])
 def client_dashboard():
     username = session.get('client_username')
@@ -239,7 +321,6 @@ def client_dashboard():
             <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>
             {% endif %}
 
-            <!-- Subscription Plan Info Box -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
                 <div class="flex justify-between items-center">
                     <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-id-card mr-2"></i> আপনার সাবস্ক্রিপশন তথ্য</h2>
@@ -253,7 +334,6 @@ def client_dashboard():
                 </div>
             </div>
 
-            <!-- Domain Configuration Box -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4 shadow-lg">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-globe mr-2"></i> ডোমেন কনফিগারেশন</h2>
                 <p class="text-xs text-slate-400">আপনার প্ল্যান অনুযায়ী আপনি সর্বোচ্চ {{ max_slots }} টি ডোমেন যুক্ত করতে পারবেন।</p>
@@ -271,7 +351,6 @@ def client_dashboard():
                 </form>
             </div>
 
-            <!-- Proxy Routing Link Format Section -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-link mr-2"></i> প্রক্সি রাউটিং লিংক ফরম্যাট</h2>
                 <p class="text-xs text-slate-400">আপনার নিজস্ব ডোমেনের ট্রাফিক প্রক্সি করার জন্য নিচের ফরম্যাটটি ব্যবহার করুন:</p>
@@ -291,7 +370,7 @@ def client_logout():
     session.pop('client_username', None)
     return redirect(url_for('client_login'))
 
-# --- Admin Login & Dashboard Placeholders ---
+# --- Admin Login Placeholder ---
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
@@ -306,5 +385,28 @@ def admin_dashboard():
         return redirect(url_for('admin_login'))
     return 'Admin Dashboard - All Clients Control Panel'
 
+# --- প্রক্সি রাউট (আপনার ব্যাকআপ থেকে নেওয়া) ---
+@app.route('/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+def proxy(subpath):
+    target_url = f"https://iss-antivirus-cloud.onrender.com/{subpath}"
+    
+    try:
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers={key: value for (key, value) in request.headers if key != 'Host'},
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            timeout=10
+        )
+        
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+        
+        return Response(resp.content, resp.status_code, headers)
+    except Exception as e:
+        return f"Proxy Error: {str(e)}", 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=10000)
