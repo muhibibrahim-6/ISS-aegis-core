@@ -110,8 +110,10 @@ def aegis_firewall_middleware():
     path = request.path
     user_agent = request.headers.get('User-Agent', '')
     
-    if path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/my-profile' or path.startswith('/proxy/'):
+        # প্রক্সি রিকোয়েস্ট হলে WAF স্কিপ করতে চাইলে এটি দিতে পারেন
+    if path.startswith('/proxy'):
         return
+
         
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
