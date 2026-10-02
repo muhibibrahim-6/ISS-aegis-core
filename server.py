@@ -18,7 +18,7 @@ def send_discord_alert(threat_type, client_ip, path):
     payload = {
         "embeds": [{
             "title": "🚨 Aegis WAF - Advanced Security Threat Blocked!",
-            "color": 16711680, # লাল রঙ (Red)
+            "color": 16711680,
             "fields": [
                 {"name": "🛡️ Threat Type", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
@@ -58,7 +58,7 @@ BLOCK_DURATION = 300
 
 # রেট লিমিটিং ট্র্যাকিং ডিকশনারি
 request_counts = {}
-RATE_LIMIT_WINDOW = 60  # ৬০ সেকেন্ডে সর্বোচ্চ রিকোয়েস্ট
+RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_ALLOWED = 100
 
 # --- উন্নত ফায়ারওয়াল প্যাটার্ন লিস্ট (Advanced WAF Rules) ---
@@ -86,19 +86,16 @@ def analyze_payload(text, user_agent=""):
         text = ""
     text_lower = str(text).lower()
     
-    # ইউজার এজেন্ট স্ক্যান (বট বা অ্যাটাকিং টুল ডিটেকশন)
     if user_agent:
         ua_lower = user_agent.lower()
         for bot in SUSPICIOUS_AGENTS:
             if bot in ua_lower:
                 return f"Malicious Bot / Scanner ({bot.upper()})"
 
-    # SQLi চেক
     for pattern, desc in SQLI_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
             
-    # XSS চেক
     for pattern, desc in XSS_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
@@ -113,11 +110,9 @@ def aegis_firewall_middleware():
     path = request.path
     user_agent = request.headers.get('User-Agent', '')
     
-    # স্ট্যাটিক ফাইল বা নির্দিষ্ট সিকিউর রুটগুলো ফায়ারওয়ালের বাইরে রাখা
     if path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/my-profile' or path.startswith('/proxy/'):
         return
         
-    # ব্লক করা আইপি চেক
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
             return jsonify({
@@ -129,7 +124,6 @@ def aegis_firewall_middleware():
             if client_ip in blocked_until:
                 del blocked_until[client_ip]
 
-    # রেট লিমিটিং (Rate Limiting) চেক
     if client_ip not in request_counts:
         request_counts[client_ip] = {"count": 1, "start_time": current_time}
     else:
@@ -143,27 +137,27 @@ def aegis_firewall_middleware():
         else:
             request_counts[client_ip] = {"count": 1, "start_time": current_time}
 
-    # সম্পূর্ণ রিকোয়েস্ট পেলোড ও কুয়েরি স্ট্রিং স্ক্যান করা
     req_payload = str(request.full_path) + " " + str(request.args.to_dict()) + " " + str(request.get_json(silent=True) or request.form.to_dict())
     threat_type = analyze_payload(req_payload, user_agent)
     
     if threat_type:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
-        
-        # ডিসকর্ডে ইনস্ট্যান্ট অ্যালার্ট পাঠানো
         send_discord_alert(threat_type, client_ip, path)
-        
         return jsonify({
             "error": "Web Application Firewall Triggered",
             "threat_detected": threat_type,
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route ---
+# --- Reverse Proxy Route (Updated & Fixed) ---
+@app.route('/proxy', defaults={'full_path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 @app.route('/proxy/<path:full_path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy(full_path):
-    parts = full_path.split('/', 1)
+    parts = full_path.strip('/').split('/', 1)
+    if not parts or not parts[0]:
+        return jsonify({"error": "Invalid Proxy URL Format. Use /proxy/domain.com/path"}), 400
+        
     client_domain = parts[0]
     subpath = parts[1] if len(parts) > 1 else ""
 
@@ -181,12 +175,13 @@ def reverse_proxy(full_path):
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d")
             if datetime.now() > expiry_date:
-                return jsonify({"error": "License Expired", "message": "This server's license has expired. Please contact admin."}), 403
+                return jsonify({"error": "License Expired", "message": "This server's license has expired."}), 403
         except Exception:
             pass
 
     origin_url = matched_client['origin_ip']
     target_url = f"{origin_url.rstrip('/')}/{subpath}"
+    
     try:
         req_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'accept-encoding']}
         
@@ -201,10 +196,9 @@ def reverse_proxy(full_path):
         )
         
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+        headers = [(name, value) for (name, value) in resp.raw.items() if name.lower() not in excluded_headers] if hasattr(resp.raw, 'items') else [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded_headers]
         
-        content = resp.content
-        return Response(content, resp.status_code, headers)
+        return Response(resp.content, resp.status_code, headers)
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
@@ -238,7 +232,6 @@ def landing_page():
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
 
-        <!-- Security Infrastructure Images Section -->
         <section class="max-w-6xl mx-auto px-6 py-10 space-y-6 text-center">
             <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure & Overview</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -257,7 +250,6 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Subscription Pricing Section -->
         <section class="max-w-6xl mx-auto px-6 py-16 space-y-10">
             <div class="text-center space-y-3">
                 <h2 class="text-2xl md:text-3xl font-bold text-white">Flexible <span class="text-cyan-400">Subscription Plans</span></h2>
@@ -265,7 +257,6 @@ def landing_page():
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Standard -->
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition shadow-xl">
                     <div class="space-y-4">
                         <div class="flex justify-between items-center">
@@ -286,7 +277,6 @@ def landing_page():
                     <a href="/client/login" class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold py-2.5 rounded text-xs text-center transition block">Get Started</a>
                 </div>
 
-                <!-- Professional -->
                 <div class="bg-slate-900 border border-cyan-500/80 rounded-2xl p-6 space-y-6 flex flex-col justify-between relative shadow-2xl">
                     <div class="absolute -top-3 left-1/2 -transform -translate-x-1/2 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-full uppercase tracking-wider">Most Popular (5 Domains)</div>
                     <div class="space-y-4">
@@ -308,7 +298,6 @@ def landing_page():
                     <a href="/client/login" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded text-xs text-center transition block">Get Started</a>
                 </div>
 
-                <!-- Enterprise -->
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition shadow-xl">
                     <div class="space-y-4">
                         <div class="flex justify-between items-center">
@@ -331,7 +320,6 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Social Media & Discord Community Section -->
         <section class="max-w-4xl mx-auto px-6 py-10 text-center">
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 class="text-lg font-bold text-cyan-400">Connect With Me</h3>
@@ -352,7 +340,6 @@ def landing_page():
     </html>
     """)
 
-# --- My Profile / Secure Admin Access Route ---
 @app.route('/my-profile', methods=['GET', 'POST'])
 def my_profile():
     error = None
@@ -396,7 +383,6 @@ def my_profile():
     </html>
     """, error=error)
 
-# --- Admin Dashboard ---
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 def admin_dashboard():
     if not session.get('is_admin'):
@@ -535,7 +521,6 @@ def admin_dashboard():
     </html>
     """, success_msg=success_msg, error_msg=error_msg, customers=CUSTOMERS_DB)
 
-# --- Client Login ---
 @app.route('/client/login', methods=['GET', 'POST'])
 def client_login():
     error = None
@@ -581,7 +566,6 @@ def client_login():
     </html>
     """, error=error)
 
-# --- Client Dashboard ---
 @app.route('/client/dashboard', methods=['GET', 'POST'])
 def client_dashboard():
     username = session.get('client_username')
