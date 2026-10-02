@@ -10,10 +10,10 @@ BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300  # ৫ মিনিট ব্লক সময় (সেকেন্ডে)
 
-# ডিসকর্ড ওয়েহুক ইউআরএল
+# ডিসকর্ড ওয়েহুক ইউআরএল (আপনার ডিসকর্ড ওয়েহুক লিংকটি এখানে বসাবেন)
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1346765582967277638/7x_U4N_YOUR_WEBHOOK_URL_HERE"
 
-# কাস্টমার ডাটাবেস (ছবি এবং অন্যান্য তথ্যসহ)
+# কাস্টমার ডাটাবেস (ছবি, প্ল্যান, ডোমেন ও অন্যান্য তথ্যসহ)
 CUSTOMERS_DB = [
     {
         "id": 1,
@@ -89,7 +89,7 @@ def aegis_firewall_middleware():
     current_time = time.time()
     path = request.path
     
-    # অ্যাডমিন বা ক্লায়েন্ট প্যানেলের নির্দিষ্ট কিছু রুট ফায়ারওয়ালের বাইরে রাখা
+    # অ্যাডমিন, ক্লায়েন্ট প্যানেল বা প্রক্সি রুটগুলো ফায়ারওয়ালের বাইরে রাখা
     if path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy/'):
         return
         
@@ -187,7 +187,7 @@ def client_login():
     </html>
     """, error=error)
 
-# --- Client Dashboard (Personalized & Complete with Images & Plans) ---
+# --- Client Dashboard (Complete with Avatars, Subscriptions, Domain Slots & Proxy URLs) ---
 @app.route('/client/dashboard', methods=['GET', 'POST'])
 def client_dashboard():
     username = session.get('client_username')
@@ -239,6 +239,7 @@ def client_dashboard():
             <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>
             {% endif %}
 
+            <!-- Subscription Plan Info Box -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
                 <div class="flex justify-between items-center">
                     <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-id-card mr-2"></i> আপনার সাবস্ক্রিপশন তথ্য</h2>
@@ -252,6 +253,7 @@ def client_dashboard():
                 </div>
             </div>
 
+            <!-- Domain Configuration Box -->
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4 shadow-lg">
                 <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-globe mr-2"></i> ডোমেন কনফিগারেশন</h2>
                 <p class="text-xs text-slate-400">আপনার প্ল্যান অনুযায়ী আপনি সর্বোচ্চ {{ max_slots }} টি ডোমেন যুক্ত করতে পারবেন।</p>
@@ -268,7 +270,17 @@ def client_dashboard():
                     <button type="submit" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-6 py-2.5 rounded text-xs transition"><i class="fa-solid fa-floppy-disk mr-1"></i> ডোমেন সেভ করুন</button>
                 </form>
             </div>
+
+            <!-- Proxy Routing Link Format Section -->
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-link mr-2"></i> প্রক্সি রাউটিং লিংক ফরম্যাট</h2>
+                <p class="text-xs text-slate-400">আপনার নিজস্ব ডোমেনের ট্রাফিক প্রক্সি করার জন্য নিচের ফরম্যাটটি ব্যবহার করুন:</p>
+                <code class="bg-slate-950 p-3 rounded block text-xs text-cyan-300 font-mono">https://<span id="hostName"></span>/proxy/আপনার-ডোমেন.কম/path</code>
+            </div>
         </main>
+        <script>
+            document.getElementById('hostName').innerText = window.location.host;
+        </script>
     </body>
     </html>
     """, client=current_client, max_slots=max_slots, success_msg=success_msg)
