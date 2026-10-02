@@ -4,6 +4,7 @@ import re
 import requests
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
 from datetime import datetime
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
@@ -107,7 +108,7 @@ def analyze_payload(text, user_agent=""):
 def aegis_firewall_middleware():
     path = request.path
     
-    # প্রক্সি রিকোয়েস্ট অথবা এডমিন/ক্লিনিক পেজ হলে WAF স্কিপ করবে
+    # প্রক্সি রিকোয়েস্ট অথবা এডমিন পেজ হলে WAF স্কিপ করবে
     if path.startswith('/proxy') or path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/my-profile':
         return
 
@@ -152,16 +153,15 @@ def aegis_firewall_middleware():
             "action": "IP Blocked"
         }), 403
 
-# --- Reverse Proxy Route (Query Parameter Based & Bulletproof) ---
+# --- Reverse Proxy Route (Supports Full URL with https://) ---
 @app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy():
-    target = request.args.get('target', '').strip('/')
-    if not target:
-        return jsonify({"error": "Invalid Proxy URL Format. Use /proxy?target=domain.com/path"}), 400
+    target_url = request.args.get('target', '').strip()
+    if not target_url:
+        return jsonify({"error": "Invalid Proxy URL Format. Use /proxy?target=https://domain.com/path"}), 400
         
-    parts = target.split('/', 1)
-    client_domain = parts[0]
-    subpath = parts[1] if len(parts) > 1 else ""
+    parsed_target = urlparse(target_url)
+    client_domain = parsed_target.netloc or parsed_target.path.split('/')[0]
 
     matched_client = None
     for c in CUSTOMERS_DB:
@@ -180,9 +180,6 @@ def reverse_proxy():
                 return jsonify({"error": "License Expired", "message": "This server's license has expired."}), 403
         except Exception:
             pass
-
-    origin_url = matched_client['origin_ip']
-    target_url = f"{origin_url.rstrip('/')}/{subpath}"
     
     try:
         req_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'accept-encoding']}
