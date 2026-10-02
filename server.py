@@ -10,10 +10,10 @@ BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300  # ৫ মিনিট ব্লক সময় (সেকেন্ডে)
 
-# ডিসকর্ড ওয়েহুক ইউআরএল (আপনার ডিসকর্ড ওয়েহুক লিংকটি এখানে বসানো আছে)
+# ডিসকর্ড ওয়েহুক ইউআরএল
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1346765582967277638/7x_U4N_YOUR_WEBHOOK_URL_HERE"
 
-# কাস্টমার ডাটাবেস
+# কাস্টমার ডাটাবেস (ছবি এবং অন্যান্য তথ্যসহ)
 CUSTOMERS_DB = [
     {
         "id": 1,
@@ -23,7 +23,8 @@ CUSTOMERS_DB = [
         "plan": "Standard",
         "expiry_date": "2026-12-31",
         "domains": ["example.com"],
-        "api_key": "api_key_rahim_12345"
+        "api_key": "api_key_rahim_12345",
+        "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
     },
     {
         "id": 2,
@@ -33,7 +34,8 @@ CUSTOMERS_DB = [
         "plan": "Professional",
         "expiry_date": "2027-06-30",
         "domains": ["mysite.com", "shop.net"],
-        "api_key": "api_key_karim_67890"
+        "api_key": "api_key_karim_67890",
+        "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150"
     }
 ]
 
@@ -87,7 +89,7 @@ def aegis_firewall_middleware():
     current_time = time.time()
     path = request.path
     
-    # অ্যাডমিন বা নির্দিষ্ট কিছু পেজ ফায়ারওয়াল চেকের বাইরে রাখতে চাইলে
+    # অ্যাডমিন বা ক্লায়েন্ট প্যানেলের নির্দিষ্ট কিছু রুট ফায়ারওয়ালের বাইরে রাখা
     if path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy/'):
         return
         
@@ -129,11 +131,12 @@ def home():
         <meta charset="UTF-8">
         <title>ISS Antivirus Cloud - WAF Protected</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
     <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center min-h-screen">
         <div class="text-center space-y-4 p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-lg">
-            <h1 class="text-2xl font-bold text-cyan-400">ISS Antivirus Cloud WAF</h1>
-            <p class="text-xs text-slate-400">System is active, secured and protected with advanced threat detection.</p>
+            <h1 class="text-2xl font-bold text-cyan-400"><i class="fa-solid fa-shield-halved mr-2"></i>ISS Antivirus Cloud WAF</h1>
+            <p class="text-xs text-slate-400">System is active, secured and protected with advanced threat detection & Discord alerts.</p>
             <div class="pt-4 flex justify-center space-x-4">
                 <a href="/client/login" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded text-xs font-bold transition">Client Login</a>
                 <a href="/admin/login" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded text-xs font-bold transition">Admin Portal</a>
@@ -155,19 +158,20 @@ def client_login():
             if c['username'] == username and c['password'] == password:
                 session['client_username'] = username
                 return redirect(url_for('client_dashboard'))
-        error = " ভুল ইউজারনেম অথবা পাসওয়ার্ড!"
+        error = "ভুল ইউজারনেম অথবা পাসওয়ার্ড!"
         
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Client Login</title>
+        <title>Client Login - Private Portal</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
     <body class="bg-slate-950 text-slate-100 flex items-center justify-center min-h-screen">
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-96 space-y-4 shadow-xl">
-            <h2 class="text-lg font-bold text-cyan-400 text-center">ক্লীয়েণ্ট লগইন</h2>
+            <h2 class="text-lg font-bold text-cyan-400 text-center"><i class="fa-solid fa-user-lock mr-2"></i>ক্লীয়েণ্ট লগইন</h2>
             {% if error %}<p class="text-xs text-red-400 text-center">{{ error }}</p>{% endif %}
             <div>
                 <label class="text-xs text-slate-400">ইউজারনেম</label>
@@ -183,7 +187,7 @@ def client_login():
     </html>
     """, error=error)
 
-# --- Client Dashboard ---
+# --- Client Dashboard (Personalized & Complete with Images & Plans) ---
 @app.route('/client/dashboard', methods=['GET', 'POST'])
 def client_dashboard():
     username = session.get('client_username')
@@ -217,31 +221,54 @@ def client_dashboard():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Client Dashboard</title>
+        <title>Client Dashboard - Private Portal</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
-    <body class="bg-slate-950 text-slate-100 font-sans p-6">
-        <div class="max-w-2xl mx-auto space-y-6">
-            <div class="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <h1 class="text-sm font-bold text-cyan-400">স্বাগতম, {{ client.client_name }}</h1>
-                <a href="/client/logout" class="text-xs text-red-400 hover:underline">লগআউট</a>
+    <body class="bg-slate-950 text-slate-100 font-sans">
+        <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
+            <h1 class="font-bold text-cyan-400 flex items-center"><i class="fa-solid fa-shield-halved mr-2"></i> ব্যক্তিগত ড্যাশবোর্ড</h1>
+            <div class="flex items-center space-x-4">
+                <img src="{{ client.avatar }}" alt="Avatar" class="w-8 h-8 rounded-full border border-cyan-500 object-cover">
+                <span class="text-xs text-slate-400">স্বাগতম, <strong class="text-cyan-400">{{ client.client_name }}</strong></span>
+                <a href="/client/logout" class="text-xs text-red-400 hover:underline"><i class="fa-solid fa-right-from-bracket mr-1"></i> লগআউট</a>
             </div>
+        </nav>
+        <main class="p-6 max-w-4xl mx-auto space-y-6">
             {% if success_msg %}
-            <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded text-xs">{{ success_msg }}</div>
+            <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>
             {% endif %}
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-sm font-bold text-cyan-400">ডোমেন ম্যানেজমেন্ট (প্ল্যান: {{ client.plan }})</h2>
+
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3 shadow-lg">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-id-card mr-2"></i> আপনার সাবস্ক্রিপশন তথ্য</h2>
+                    <span class="bg-purple-500/10 text-purple-400 text-xs font-bold px-3 py-1 rounded-full uppercase border border-purple-500/30">{{ client.plan }} Plan</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300 pt-2">
+                    <p><strong>ইউজারনেম:</strong> {{ client.username }}</p>
+                    <p><strong>লাইসেন্স মেয়াদ:</strong> <span class="text-amber-400 font-bold">{{ client.expiry_date }}</span></p>
+                    <p><strong>অনুমোদিত ডোমেন স্লট:</strong> <span class="text-cyan-400 font-bold">{{ max_slots }} টি</span></p>
+                    <p><strong>আপনার সিক্রেট API Key:</strong> <span class="font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800">{{ client.api_key }}</span></p>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4 shadow-lg">
+                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-globe mr-2"></i> ডোমেন কনফিগারেশন</h2>
+                <p class="text-xs text-slate-400">আপনার প্ল্যান অনুযায়ী আপনি সর্বোচ্চ {{ max_slots }} টি ডোমেন যুক্ত করতে পারবেন।</p>
+                
                 <form method="POST" class="space-y-4">
-                    {% for i in range(max_slots) %}
-                    <div>
-                        <label class="text-[11px] text-slate-400">স্লট #{{ i + 1 }}</label>
-                        <input type="text" name="domain_{{ i }}" value="{{ client.domains[i] if i < client.domains|length else '' }}" class="w-full bg-slate-950 border border-slate-800 p-2 rounded text-xs text-slate-200 mt-1">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {% for i in range(max_slots) %}
+                        <div class="space-y-1">
+                            <label class="text-[11px] text-slate-400 font-semibold">ডোমেন স্লট #{{ i + 1 }}</label>
+                            <input type="text" name="domain_{{ i }}" value="{{ client.domains[i] if i < client.domains|length else '' }}" placeholder="mysite{{ i+1 }}.com" class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                        </div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
-                    <button type="submit" class="bg-cyan-500 text-slate-950 font-bold px-4 py-2 rounded text-xs">সেভ করুন</button>
+                    <button type="submit" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-6 py-2.5 rounded text-xs transition"><i class="fa-solid fa-floppy-disk mr-1"></i> ডোমেন সেভ করুন</button>
                 </form>
             </div>
-        </div>
+        </main>
     </body>
     </html>
     """, client=current_client, max_slots=max_slots, success_msg=success_msg)
@@ -252,7 +279,7 @@ def client_logout():
     session.pop('client_username', None)
     return redirect(url_for('client_login'))
 
-# --- Admin Login & Dashboard (Basic placeholders) ---
+# --- Admin Login & Dashboard Placeholders ---
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
