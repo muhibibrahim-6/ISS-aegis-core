@@ -65,7 +65,8 @@ def waf_protection():
     current_time = time.time()
     path = request.path
     
-    if 'favicon.ico' in path or path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy'):
+    # শুধুমাত্র এডমিন, ক্লায়েন্ট লগইন বা স্ট্যাটিক ফাইলের ক্ষেত্রে ফায়ারওয়াল বাইপাস হবে
+    if 'favicon.ico' in path or path.startswith('/admin') or path.startswith('/client') or path == '/my-profile':
         return
 
     if client_ip in blocked_ips:
