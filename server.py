@@ -7,9 +7,9 @@ from flask import Flask, jsonify, request, render_template_string, Response, red
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "aegis_ultimate_core_2026")
+app.secret_key = os.environ.get("SECRET_KEY", "aegis_absolute_final_2026")
 
-# স্ট্রাইক এবং ব্লক ট্র্যাকিং ডিকশনারি
+# স্ট্রাইক এবং ব্লক ট্র্যাকিং
 strike_records = {}
 blocked_ips = {}
 MAX_STRIKES = 4  
@@ -33,26 +33,26 @@ ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
 
-# --- Final Zero-Tolerance Multi-Layer WAF Protection ---
+# --- Absolute Core WAF Engine (The Firewall's True Job) ---
 @app.before_request
-def final_waf_protection():
+def firewall_core_inspection():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     path = request.path
 
-    # আইপি ব্লক চেক
+    # আইপি ব্লক স্ট্যাটাস চেক
     if client_ip in blocked_ips:
         if current_time < blocked_ips[client_ip]:
             return jsonify({
-                "error": "Aegis WAF - IP Blocked",
-                "message": "Your IP has been blocked due to continuous payload injection attempts."
+                "error": "Aegis WAF - IP Banned",
+                "message": "Your IP has been blocked due to repeated payload injection attacks."
             }), 403
         else:
             del blocked_ips[client_ip]
             if client_ip in strike_records:
                 del strike_records[client_ip]
 
-    # পুরো রিকোয়েস্ট ডিকোড করে স্ক্যান করা
+    # ফায়ারওয়ালের মূল কাজ: যেকোনো লিংকের ইনকামিং রিকোয়েস্ট (URL, Proxy Target, Parameters, Body) নিখুঁতভাবে স্ক্যান করা
     raw_full_path = request.full_path
     decoded_url = unquote(raw_full_path)
     
@@ -64,7 +64,7 @@ def final_waf_protection():
 
     inspection_target = f"{decoded_url} {body_content}"
 
-    # অ্যাটাক প্যাটার্ন (SQLi, XSS)
+    # ডেঞ্জারাস অ্যাটাক প্যাটার্ন (SQLi, XSS)
     sqli_pattern = r"union\s+select|or\s+1\s*=\s*1|drop\s+table|--|#|information_schema|benchmark\s*\(|exec\s*\("
     xss_pattern = r"<script.*?>.*?</script>|javascript:|onerror\s*=|onload\s*="
 
@@ -85,28 +85,29 @@ def final_waf_protection():
         strike_records[client_ip] += 1
         current_strikes = strike_records[client_ip]
         
+        # ৪ বার বা তার বেশি হলে স্থায়ীভাবে আইপি ব্লক
         if current_strikes >= MAX_STRIKES:
             blocked_ips[client_ip] = current_time + BLOCK_TIME
             return jsonify({
-                "error": "Aegis WAF - Security Violation",
+                "error": "Aegis WAF - Critical Security Violation",
                 "threat_detected": threat_name,
                 "strikes": f"{current_strikes}/{MAX_STRIKES}",
-                "action": "Blocked completely. IP suspended for 30 minutes!"
+                "action": "IP BANNED for 30 minutes. Access completely terminated!"
             }), 403
         else:
             return jsonify({
                 "error": "Aegis WAF - Malicious Payload Blocked",
                 "threat_detected": threat_name,
                 "strikes_count": f"{current_strikes}/{MAX_STRIKES}",
-                "message": f"Payload detected and blocked! Website access denied. {MAX_STRIKES - current_strikes} attempts remaining before IP ban."
+                "message": f"Payload detected and blocked instantly! {MAX_STRIKES - current_strikes} attempts left before IP ban."
             }), 400
 
-# --- Reverse Proxy Route ---
+# --- Reverse Proxy Route (Client's Protected Website Link Route) ---
 @app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy():
     target = request.args.get('target', '').strip('/')
     if not target:
-        return jsonify({"error": "Invalid Proxy URL Format"}), 400
+        return jsonify({"error": "Invalid Proxy Target Format. Use /proxy?target=domain.com/path"}), 400
         
     parts = target.split('/', 1)
     client_domain = parts[0]
@@ -119,7 +120,7 @@ def reverse_proxy():
             break
 
     if not matched_client:
-        return jsonify({"error": f"Target Domain Not Registered"}), 404
+        return jsonify({"error": f"Target Domain '{client_domain}' Not Registered in Firewall Database"}), 404
         
     origin_url = matched_client['origin_ip']
     target_url = f"{origin_url.rstrip('/')}/{subpath}"
