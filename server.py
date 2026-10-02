@@ -14,21 +14,21 @@ DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555088247137509379/Yrug
 # স্ট্রাইক এবং ব্লক ট্র্যাকিং ডিকশনারি
 strike_records = {}
 blocked_ips = {}
-MAX_STRIKES = 4  # ৪ বার অ্যাটাক করলে ব্লক হবে
-BLOCK_TIME = 1800  # ৩০ মিনিট (সেকেন্ডে)
+MAX_STRIKES = 4  
+BLOCK_TIME = 1800  # ৩০ মিনিট
 
 def send_discord_alert(client_ip, threat_type, strikes, path):
     if not DISCORD_WEBHOOK_URL:
         return
     payload = {
         "embeds": [{
-            "title": "🚨 Aegis WAF - IP Blocked Due to Repeated Attacks",
+            "title": "🚨 Aegis Smart WAF - Targeted IP Blocked",
             "color": 16711680,
             "fields": [
                 {"name": "🛡 Threat Type", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
                 {"name": "⚠️ Total Strikes", "value": f"{strikes} / {MAX_STRIKES}", "inline": True},
-                {"name": "📂 Target Path", "value": str(path), "inline": False},
+                {"name": "📂 Monitored Path", "value": str(path), "inline": False},
                 {"name": "⚡ Action", "value": "IP Blocked for 30 Minutes", "inline": False}
             ],
             "timestamp": datetime.utcnow().isoformat()
@@ -39,7 +39,6 @@ def send_discord_alert(client_ip, threat_type, strikes, path):
     except Exception:
         pass
 
-# মেমোরিতে ক্লায়েন্ট ডেটা সেভ করার জন্য লিস্ট
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -58,22 +57,28 @@ ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
 
-# --- Aegis WAF Firewall Middleware with Strike System ---
+# --- Smart Aegis WAF (Active only on Monitored/Sensitive Routes) ---
 @app.before_request
-def waf_protection():
+def smart_waf_protection():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     path = request.path
+
+    # এখানে আমরা সংজ্ঞায়িত করে দিচ্ছি ফায়ারওয়াল কোন রুটগুলোতে একটিভ থাকবে (যেমন প্রক্সি এবং ক্লায়েন্ট প্যানেল রুট)
+    # আপনি চাইলে এখানে আপনার দরকারমতো যেকোনো ডকুমেন্ট বা পাথ যুক্ত করতে পারেন
+    monitored_paths = ['/proxy', '/client/login', '/admin/dashboard']
     
-    # শুধুমাত্র এডমিন, ক্লায়েন্ট লগইন বা স্ট্যাটিক ফাইলের ক্ষেত্রে ফায়ারওয়াল বাইপাস হবে
-    if 'favicon.ico' in path or path.startswith('/admin') or path.startswith('/client') or path == '/my-profile':
+    is_target_path = any(path.startswith(p) for p in monitored_paths)
+    
+    # যদি রুটটি আমাদের মনিটরেড লিস্টে না থাকে, তবে ফায়ারওয়াল চেক করার দরকার নেই (স্মার্টলি বাইপাস হবে)
+    if not is_target_path:
         return
 
     if client_ip in blocked_ips:
         if current_time < blocked_ips[client_ip]:
             return jsonify({
                 "error": "Aegis WAF - Access Denied",
-                "message": "Your IP is blocked for 30 minutes due to repeated malicious requests."
+                "message": "Your IP is blocked for 30 minutes due to repeated malicious requests on protected endpoints."
             }), 403
         else:
             del blocked_ips[client_ip]
@@ -102,17 +107,19 @@ def waf_protection():
             blocked_ips[client_ip] = current_time + BLOCK_TIME
             send_discord_alert(client_ip, threat_name, current_strikes, path)
             return jsonify({
-                "error": "Web Application Firewall Triggered",
+                "error": "Smart Web Application Firewall Triggered",
                 "threat_detected": threat_name,
+                "endpoint": path,
                 "strikes": f"{current_strikes}/{MAX_STRIKES}",
                 "action": "IP Blocked for 30 Minutes!"
             }), 403
         else:
             return jsonify({
-                "warning": "Aegis WAF - Suspicious Activity Detected",
+                "warning": "Aegis Smart WAF - Suspicious Activity on Protected Document",
                 "threat_detected": threat_name,
+                "endpoint": path,
                 "strikes_count": f"{current_strikes}/{MAX_STRIKES}",
-                "message": f"Warning! {MAX_STRIKES - current_strikes} more attempts will result in a 30-minute IP block."
+                "message": f"Warning! {MAX_STRIKES - current_strikes} more attempts on protected endpoints will result in an IP block."
             }), 400
 
 # --- Reverse Proxy Route ---
@@ -155,7 +162,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home with Images, Plans & Exact Social Links) ---
+# --- Landing Page with Exact Social Links ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -181,7 +188,7 @@ def landing_page():
         </nav>
 
         <header class="max-w-6xl mx-auto px-6 py-16 text-center space-y-6">
-            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Next-Gen Cybersecurity Protection</span>
+            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Smart Protected Endpoints Active</span>
             <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Ultimate Defense for Your <span class="text-cyan-400">Web Servers & Infrastructure</span></h1>
             <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protect your web applications from SQL Injections, XSS attacks, DDoS, and malicious malware threats in real-time with enterprise-grade reverse proxy firewall.</p>
         </header>
@@ -205,54 +212,45 @@ def landing_page():
             </div>
         </section>
 
-        <!-- Premium Plans & Pricing Section -->
+        <!-- Pricing Section -->
         <section id="plans" class="max-w-6xl mx-auto px-6 py-16 space-y-8">
             <div class="text-center space-y-3">
                 <h2 class="text-3xl font-bold text-white">Choose Your <span class="text-cyan-400">Protection Plan</span></h2>
                 <p class="text-slate-400 text-sm">Flexible pricing plans designed to secure websites and applications of any scale.</p>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Standard Plan -->
-                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition">
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between">
                     <div class="space-y-4">
                         <span class="text-xs bg-slate-800 text-cyan-400 px-3 py-1 rounded-full font-semibold">Standard Plan</span>
                         <h3 class="text-2xl font-bold text-white">$19<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
-                        <p class="text-xs text-slate-400">Ideal for personal blogs and small portfolio websites.</p>
                         <ul class="text-xs space-y-2 text-slate-300">
                             <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> 1 Domain Protected</li>
                             <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Basic SQLi & XSS Defense</li>
-                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Standard Reverse Proxy</li>
                         </ul>
                     </div>
                     <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Standard</a>
                 </div>
 
-                <!-- Professional Plan -->
                 <div class="bg-slate-900 border border-cyan-500 p-8 rounded-2xl space-y-6 flex flex-col justify-between relative shadow-lg shadow-cyan-500/10">
                     <div class="absolute -top-3 right-6 bg-cyan-500 text-slate-950 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase">Popular</div>
                     <div class="space-y-4">
                         <span class="text-xs bg-cyan-500/20 text-cyan-400 px-3 py-1 rounded-full font-semibold">Professional Plan</span>
                         <h3 class="text-2xl font-bold text-white">$49<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
-                        <p class="text-xs text-slate-400">Perfect for growing business websites and apps.</p>
                         <ul class="text-xs space-y-2 text-slate-300">
                             <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Up to 5 Domains Protected</li>
-                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Advanced Strike & IP Blocking</li>
-                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Real-time Discord Alerts</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Advanced Smart Strike System</li>
                         </ul>
                     </div>
                     <a href="/client/login" class="w-full block text-center bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Professional</a>
                 </div>
 
-                <!-- Enterprise Plan -->
-                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between hover:border-cyan-500/50 transition">
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6 flex flex-col justify-between">
                     <div class="space-y-4">
                         <span class="text-xs bg-slate-800 text-purple-400 px-3 py-1 rounded-full font-semibold">Enterprise Plan</span>
                         <h3 class="text-2xl font-bold text-white">$99<span class="text-xs text-slate-400 font-normal"> /month</span></h3>
-                        <p class="text-xs text-slate-400">Maximum protection for corporate high-traffic servers.</p>
                         <ul class="text-xs space-y-2 text-slate-300">
                             <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Up to 10 Domains Protected</li>
-                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Custom WAF Rules & Shield</li>
-                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> 24/7 Priority Support</li>
+                            <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i> Custom Shield & Priority Support</li>
                         </ul>
                     </div>
                     <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2.5 rounded text-xs transition">Get Enterprise</a>
@@ -295,23 +293,16 @@ def my_profile():
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <title>My Profile & Admin Login</title>
+        <meta charset="UTF-8"><title>Admin Login</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
     <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center h-screen">
-        <div class="absolute top-6 left-6">
-            <a href="/" class="text-xs text-cyan-400 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i> Back to Home</a>
-        </div>
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
-            <h2 class="text-xl font-bold text-cyan-400 text-center"><i class="fa-solid fa-user-shield mr-2"></i> Admin Portal</h2>
-            {% if error %}
-            <p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>
-            {% endif %}
+            <h2 class="text-xl font-bold text-cyan-400 text-center">Admin Portal</h2>
+            {% if error %}<p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>{% endif %}
             <input type="text" name="username" placeholder="Username or Email" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
             <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
-            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Authenticate & Enter</button>
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Login</button>
         </form>
     </body>
     </html>
@@ -353,26 +344,18 @@ def admin_dashboard():
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <title>Admin Dashboard</title>
+        <meta charset="UTF-8"><title>Admin Dashboard</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
     <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
             <h1 class="font-bold text-cyan-400">AEGIS CORE • ADMIN PANEL</h1>
-            <div class="space-x-4">
-                <a href="/" target="_blank" class="text-xs text-cyan-400 hover:underline">View Website</a>
-                <a href="/my-profile?logout=true" class="text-xs text-red-400 hover:underline">Logout</a>
-            </div>
+            <a href="/my-profile?logout=true" class="text-xs text-red-400 hover:underline">Logout</a>
         </nav>
         <main class="p-6 max-w-7xl mx-auto space-y-6">
-            {% if success_msg %}
-            <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>
-            {% endif %}
-            
+            {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>{% endif %}
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-user-plus mr-2"></i> Create Server/Client & License</h2>
+                <h2 class="text-lg font-bold text-cyan-400">Create Client License</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <input type="hidden" name="action" value="create">
                     <input type="text" name="client_name" placeholder="Server Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
@@ -388,44 +371,8 @@ def admin_dashboard():
                         <option value="Professional">Professional</option>
                         <option value="Enterprise">Enterprise</option>
                     </select>
-                    <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs transition">Save & Create License</button>
+                    <button type="submit" class="md:col-span-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-2.5 rounded text-xs">Save</button>
                 </form>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-server mr-2"></i> Registered Clients / Licenses</h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-slate-400 uppercase bg-slate-950">
-                                <th class="p-3">Name</th>
-                                <th class="p-3">Username</th>
-                                <th class="p-3">Domains</th>
-                                <th class="p-3">Plan</th>
-                                <th class="p-3">Expiry Date</th>
-                                <th class="p-3 text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-800">
-                            {% for c in customers %}
-                            <tr>
-                                <td class="p-3 font-semibold">{{ c.client_name }}</td>
-                                <td class="p-3 text-cyan-400">{{ c.username }}</td>
-                                <td class="p-3 text-cyan-300">{{ c.domains | join(', ') }}</td>
-                                <td class="p-3 text-purple-400 font-semibold">{{ c.plan }}</td>
-                                <td class="p-3 text-amber-400 font-semibold">{{ c.expiry_date }}</td>
-                                <td class="p-3 text-center">
-                                    <form method="POST" onsubmit="return confirm('Delete this?');" style="display:inline;">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="api_key" value="{{ c.api_key }}">
-                                        <button type="submit" class="bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white px-2 py-1 rounded transition text-[10px]">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
             </div>
         </main>
     </body>
@@ -448,18 +395,14 @@ def client_login():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Client Portal Login</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
+    <head><meta charset="UTF-8"><title>Client Login</title><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center h-screen">
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl shadow-2xl w-96 space-y-4">
             <h2 class="text-xl font-bold text-cyan-400 text-center">Client Portal Login</h2>
             {% if error %}<p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>{% endif %}
-            <input type="text" name="identity" placeholder="Username, Email or API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
-            <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm focus:outline-none focus:border-cyan-500">
-            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm transition">Login</button>
+            <input type="text" name="identity" placeholder="Username, Email or API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
+            <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
+            <button type="submit" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold p-3 rounded text-sm">Login</button>
         </form>
     </body>
     </html>
@@ -485,10 +428,7 @@ def client_dashboard():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8"><title>Client Dashboard</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
+    <head><meta charset="UTF-8"><title>Client Dashboard</title><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-slate-950 text-slate-100 font-sans">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
             <h1 class="font-bold text-cyan-400">CLIENT PORTAL ({{ client.client_name }})</h1>
@@ -496,17 +436,13 @@ def client_dashboard():
         </nav>
         <main class="p-6 max-w-4xl mx-auto space-y-6">
             {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-4 rounded text-sm">{{ success_msg }}</div>{% endif %}
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-3">
-                <h2 class="text-lg font-bold text-cyan-400">Subscription Details</h2>
-                <p class="text-xs">Plan: <span class="text-purple-400">{{ client.plan }}</span> | Expiry: <span class="text-amber-400">{{ client.expiry_date }}</span></p>
-            </div>
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-lg font-bold text-cyan-400">Configure Domains</h2>
+                <h2 class="text-lg font-bold text-cyan-400">Configure Protected Domains</h2>
                 <form method="POST" class="space-y-4">
                     {% for i in range(max_slots) %}
                     <input type="text" name="domain_{{ i }}" value="{{ client.domains[i] if i < client.domains|length else '' }}" placeholder="mysite.com" class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
                     {% endfor %}
-                    <button type="submit" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-6 py-2 rounded text-xs">Save</button>
+                    <button type="submit" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-6 py-2 rounded text-xs">Save Domains</button>
                 </form>
             </div>
         </main>
@@ -519,6 +455,6 @@ def client_logout():
     session.pop('client_username', None)
     return redirect(url_for('client_login'))
 
-if __name__ == '__main__':
+if __name__ == 'main':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
