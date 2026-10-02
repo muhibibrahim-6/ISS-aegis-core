@@ -8,7 +8,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# আপনার দেওয়া ডিসকর্ড ওয়েহুক ইউআরএল সরাসরি এখানে যুক্ত করা হলো
+# আপনার দেওয়া ডিসকর্ড ওয়েহুক ইউআরএল
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555088247137509379/YruglLjphIlnSc1718YSWF7mJnEiDJ-Zzc_7Gq01BTjX4LxFxCFZbCIKrv5A4dXAmkIP"
 
 def send_discord_alert(threat_type, client_ip, path):
@@ -17,13 +17,13 @@ def send_discord_alert(threat_type, client_ip, path):
     
     payload = {
         "embeds": [{
-            "title": "🚨 Aegis WAF - Security Threat Blocked!",
+            "title": "🚨 Aegis WAF - Advanced Security Threat Blocked!",
             "color": 16711680, # লাল রঙ (Red)
             "fields": [
                 {"name": "🛡️ Threat Type", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
                 {"name": "📂 Target Path", "value": str(path), "inline": False},
-                {"name": "⚡ Action Taken", "value": "IP Temporarily Blocked (5 Mins)", "inline": False}
+                {"name": "⚡ Action Taken", "value": "IP Temporarily Blocked (5 Mins) & Logged", "inline": False}
             ],
             "timestamp": datetime.utcnow().isoformat()
         }]
@@ -56,40 +56,68 @@ BLOCKED_IPS = set()
 blocked_until = {}
 BLOCK_DURATION = 300
 
+# রেট লিমিটিং ট্র্যাকিং ডিকশনারি
+request_counts = {}
+RATE_LIMIT_WINDOW = 60  # ৬০ সেকেন্ডে সর্বোচ্চ রিকোয়েস্ট
+MAX_REQUESTS_ALLOWED = 100
+
+# --- উন্নত ফায়ারওয়াল প্যাটার্ন লিস্ট (Advanced WAF Rules) ---
 SQLI_PATTERNS = [
-    (r"union\s+select", "SQL Injection"),
+    (r"union\s+(all\s+)?select", "SQL Injection"),
     (r"or\s+1\s*=\s*1", "SQL Injection"),
     (r"drop\s+table", "SQL Injection"),
-    (r"(\%27)|(\')", "SQL Injection")
+    (r"exec\s*\(", "SQL Injection"),
+    (r"information_schema", "SQL Injection"),
+    (r"(\%27)|(\')|(\-\-)|(\#)", "SQL Injection / Suspicious Char")
 ]
 
 XSS_PATTERNS = [
     (r"<script[^>]*>[\s\S]*?</script>", "XSS Attack"),
     (r"javascript\s*:", "XSS Attack"),
-    (r"onerror\s*=", "XSS Attack")
+    (r"onerror\s*=", "XSS Attack"),
+    (r"onload\s*=", "XSS Attack"),
+    (r"<img[^>]+src\s*=\s*[\"']?x[\"']?", "XSS Attack")
 ]
 
-def analyze_payload(text):
+SUSPICIOUS_AGENTS = ["sqlmap", "nikto", "havij", "nmap", "masscan", "acunetix"]
+
+def analyze_payload(text, user_agent=""):
     if not text:
-        return None
+        text = ""
     text_lower = str(text).lower()
+    
+    # ইউজার এজেন্ট স্ক্যান (বট বা অ্যাটাকিং টুল ডিটেকশন)
+    if user_agent:
+        ua_lower = user_agent.lower()
+        for bot in SUSPICIOUS_AGENTS:
+            if bot in ua_lower:
+                return f"Malicious Bot / Scanner ({bot.upper()})"
+
+    # SQLi চেক
     for pattern, desc in SQLI_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
+            
+    # XSS চেক
     for pattern, desc in XSS_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return desc
+            
     return None
 
+# --- Aegis WAF Firewall Middleware ---
 @app.before_request
 def aegis_firewall_middleware():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     path = request.path
+    user_agent = request.headers.get('User-Agent', '')
     
+    # স্ট্যাটিক ফাইল বা নির্দিষ্ট সিকিউর রুটগুলো ফায়ারওয়ালের বাইরে রাখা
     if path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/my-profile' or path.startswith('/proxy/'):
         return
         
+    # ব্লক করা আইপি চেক
     if client_ip in BLOCKED_IPS:
         if current_time < blocked_until.get(client_ip, 0):
             return jsonify({
@@ -98,16 +126,32 @@ def aegis_firewall_middleware():
             }), 403
         else:
             BLOCKED_IPS.remove(client_ip)
-            del blocked_until[client_ip]
+            if client_ip in blocked_until:
+                del blocked_until[client_ip]
 
-    req_payload = str(request.full_path) + " " + str(request.get_json(silent=True) or request.form.to_dict())
-    threat_type = analyze_payload(req_payload)
+    # রেট লিমিটিং (Rate Limiting) চেক
+    if client_ip not in request_counts:
+        request_counts[client_ip] = {"count": 1, "start_time": current_time}
+    else:
+        if current_time - request_counts[client_ip]["start_time"] < RATE_LIMIT_WINDOW:
+            request_counts[client_ip]["count"] += 1
+            if request_counts[client_ip]["count"] > MAX_REQUESTS_ALLOWED:
+                BLOCKED_IPS.add(client_ip)
+                blocked_until[client_ip] = current_time + BLOCK_DURATION
+                send_discord_alert("Rate Limit Exceeded (DDoS / Flood)", client_ip, path)
+                return jsonify({"error": "Aegis WAF - Rate Limit Exceeded. IP Blocked."}), 403
+        else:
+            request_counts[client_ip] = {"count": 1, "start_time": current_time}
+
+    # সম্পূর্ণ রিকোয়েস্ট পেলোড ও কুয়েরি স্ট্রিং স্ক্যান করা
+    req_payload = str(request.full_path) + " " + str(request.args.to_dict()) + " " + str(request.get_json(silent=True) or request.form.to_dict())
+    threat_type = analyze_payload(req_payload, user_agent)
     
     if threat_type:
         BLOCKED_IPS.add(client_ip)
         blocked_until[client_ip] = current_time + BLOCK_DURATION
         
-        # ডিসকর্ডে ইনস্ট্যান্ট অ্যালার্ট পাঠানোর ফাংশন কল
+        # ডিসকর্ডে ইনস্ট্যান্ট অ্যালার্ট পাঠানো
         send_discord_alert(threat_type, client_ip, path)
         
         return jsonify({
