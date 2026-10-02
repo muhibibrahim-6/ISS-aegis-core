@@ -7,7 +7,7 @@ from flask import Flask, jsonify, request, render_template_string, Response, red
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "aegis_final_secret_2026")
+app.secret_key = os.environ.get("SECRET_KEY", "aegis_complete_secret_2026")
 
 # স্ট্রাইক এবং ব্লক ট্র্যাকিং ডিকশনারি
 strike_records = {}
@@ -85,7 +85,6 @@ def final_waf_protection():
         strike_records[client_ip] += 1
         current_strikes = strike_records[client_ip]
         
-        # ৪ থেকে ৫ বার হলে আইপি ব্লক এবং ওয়েবসাইট বা প্রক্সিতে ঢুকতে দেওয়া হবে না
         if current_strikes >= MAX_STRIKES:
             blocked_ips[client_ip] = current_time + BLOCK_TIME
             return jsonify({
@@ -142,7 +141,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page with Client Portal Links ---
+# --- Complete Landing Page with Subscription Plans & Social Links ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -150,21 +149,91 @@ def landing_page():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Aegis Core - Final Firewall</title>
+        <title>Aegis Core - Smart WAF & Protection</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     </head>
-    <body class="bg-slate-950 text-slate-100 font-sans">
-        <nav class="border-b border-slate-800 bg-slate-900 px-8 py-4 flex justify-between items-center">
-            <span class="font-bold text-cyan-400">AEGIS FIREWALL SYSTEM</span>
-            <div class="space-x-4">
-                <a href="/client/login" class="text-xs text-slate-300 hover:text-cyan-400">Client Portal & Website Links</a>
-                <a href="/my-profile" class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded text-xs">Admin</a>
+    <body class="bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
+        <!-- Navigation -->
+        <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur fixed w-full z-50 px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-shield-halved text-cyan-400 text-xl"></i>
+                <span class="font-bold tracking-wider text-cyan-400">AEGIS CORE WAF</span>
+            </div>
+            <div class="space-x-6 text-sm flex items-center">
+                <a href="#plans" class="text-slate-300 hover:text-cyan-400 transition">Plans</a>
+                <a href="/client/login" class="text-slate-300 hover:text-cyan-400 transition">Client Portal</a>
+                <a href="/my-profile" class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-cyan-500/20 transition">Admin Portal</a>
             </div>
         </nav>
-        <div class="max-w-4xl mx-auto px-6 py-20 text-center space-y-6">
-            <h1 class="text-4xl font-extrabold text-white">Zero-Tolerance <span class="text-cyan-400">WAF Protection</span></h1>
-            <p class="text-slate-400 text-sm">All payloads are blocked instantly at the gate. Website links are fully protected.</p>
-        </div>
+
+        <!-- Hero Section -->
+        <section class="max-w-6xl mx-auto px-6 pt-32 pb-20 text-center space-y-6">
+            <div class="inline-flex items-center space-x-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 rounded-full text-cyan-400 text-xs font-mono">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span>Zero-Tolerance Multi-Layer Protection Active</span>
+            </div>
+            <h1 class="text-5xl md:text-6xl font-extrabold tracking-tight text-white">
+                Next-Gen <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Cloud Security Firewall</span>
+            </h1>
+            <p class="text-slate-400 max-w-2xl mx-auto text-base">
+                Protecting your web assets, client website links, and proxies from sophisticated SQLi and XSS injection attacks in real-time.
+            </p>
+        </section>
+
+        <!-- Subscription Plans Section -->
+        <section id="plans" class="max-w-6xl mx-auto px-6 py-16">
+            <h2 class="text-2xl font-bold text-center mb-10 text-white">Subscription & Protection Plans</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Basic Plan -->
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6">
+                    <h3 class="text-lg font-bold text-slate-200">Standard</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400">$29<span class="text-xs text-slate-400 font-normal">/month</span></p>
+                    <ul class="space-y-3 text-xs text-slate-300">
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Basic URL Filtering</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Single Domain Protection</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Standard Rate Limiting</li>
+                    </ul>
+                    <a href="/client/login" class="block text-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-xl text-xs transition">Get Started</a>
+                </div>
+                <!-- Enterprise Plan -->
+                <div class="bg-slate-900 border border-cyan-500/50 p-8 rounded-2xl space-y-6 relative shadow-2xl shadow-cyan-500/10">
+                    <span class="absolute -top-3 right-6 bg-cyan-500 text-slate-950 font-bold px-3 py-0.5 rounded-full text-[10px]">POPULAR</span>
+                    <h3 class="text-lg font-bold text-white">Enterprise</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400">$99<span class="text-xs text-slate-400 font-normal">/month</span></p>
+                    <ul class="space-y-3 text-xs text-slate-300">
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Multi-Layer Deep Inspection</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Unlimited Website Links</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Instant IP Ban System</li>
+                    </ul>
+                    <a href="/client/login" class="block text-center bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition">Deploy Now</a>
+                </div>
+                <!-- Ultimate Plan -->
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl space-y-6">
+                    <h3 class="text-lg font-bold text-slate-200">Custom Shield</h3>
+                    <p class="text-3xl font-extrabold text-cyan-400">Custom</p>
+                    <ul class="space-y-3 text-xs text-slate-300">
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Dedicated Firewall Node</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>Custom WAF Rules</li>
+                        <li><i class="fa-solid fa-check text-cyan-400 mr-2"></i>24/7 Priority Support</li>
+                    </ul>
+                    <a href="/client/login" class="block text-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-xl text-xs transition">Contact Sales</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer with Social Media Links -->
+        <footer class="border-t border-slate-800 mt-20 py-10 bg-slate-900/35">
+            <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+                <p class="text-xs text-slate-500">&copy; 2026 Aegis Security Core. All rights reserved.</p>
+                <div class="flex space-x-6 text-slate-400">
+                    <a href="https://github.com" target="_blank" class="hover:text-cyan-400 transition"><i class="fa-brands fa-github text-lg"></i></a>
+                    <a href="https://twitter.com" target="_blank" class="hover:text-cyan-400 transition"><i class="fa-brands fa-twitter text-lg"></i></a>
+                    <a href="https://discord.com" target="_blank" class="hover:text-cyan-400 transition"><i class="fa-brands fa-discord text-lg"></i></a>
+                    <a href="https://linkedin.com" target="_blank" class="hover:text-cyan-400 transition"><i class="fa-brands fa-linkedin text-lg"></i></a>
+                </div>
+            </div>
+        </footer>
     </body>
     </html>
     """)
