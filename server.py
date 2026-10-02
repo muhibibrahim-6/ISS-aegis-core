@@ -65,11 +65,9 @@ def waf_protection():
     current_time = time.time()
     path = request.path
     
-    # স্ট্যাটিক ফাইল, ব্রাউজারের আইকন বা এডমিন/ক্লায়েন্ট প্যানেল বাইপাস করার জন্য
     if 'favicon.ico' in path or path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy'):
         return
 
-    # চেক করা আইপি অলরেডি ব্লকড কি না
     if client_ip in blocked_ips:
         if current_time < blocked_ips[client_ip]:
             return jsonify({
@@ -81,10 +79,7 @@ def waf_protection():
             if client_ip in strike_records:
                 del strike_records[client_ip]
 
-    # পুরো রিকোয়েস্ট ইউআরএল এবং প্যারামিটার চেক করা
     full_url = request.full_path
-    
-    # SQL Injection বা XSS প্যাটার্ন চেক
     is_threat = False
     threat_name = ""
     
@@ -159,7 +154,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Home with Images, Plans & Social Links) ---
+# --- Landing Page (Home with Images, Plans & Exact Social Links) ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -266,11 +261,11 @@ def landing_page():
 
         <!-- Social Links & Footer Section -->
         <footer class="border-t border-slate-800 py-10 bg-slate-900/40 text-center space-y-4">
-            <div class="flex justify-center space-x-6 text-slate-400">
-                <a href="https://t.me/yourusername" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Telegram"><i class="fa-brands fa-telegram"></i></a>
-                <a href="https://discord.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Discord"><i class="fa-brands fa-discord"></i></a>
-                <a href="https://github.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="GitHub"><i class="fa-brands fa-github"></i></a>
-                <a href="https://twitter.com" target="_blank" class="hover:text-cyan-400 transition text-lg" title="Twitter"><i class="fa-brands fa-x-twitter"></i></a>
+            <div class="flex justify-center space-x-6 text-slate-400 text-lg">
+                <a href="https://instagram.com/mrshadow6000" target="_blank" class="hover:text-cyan-400 transition" title="Instagram"><i class="fa-brands fa-instagram"></i></a>
+                <a href="https://discord.gg/mxRgm2R3ud" target="_blank" class="hover:text-cyan-400 transition" title="Discord"><i class="fa-brands fa-discord"></i></a>
+                <a href="https://linkedin.com/in/Muhib Ibrahim" target="_blank" class="hover:text-cyan-400 transition" title="LinkedIn"><i class="fa-brands fa-linkedin"></i></a>
+                <a href="https://medium.com/@muhibibra" target="_blank" class="hover:text-cyan-400 transition" title="Medium"><i class="fa-brands fa-medium"></i></a>
             </div>
             <p class="text-xs text-slate-500">&copy; 2026 Aegis Core WAF Security System. All rights reserved.</p>
         </footer>
