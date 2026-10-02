@@ -8,7 +8,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_super_secret_key_2026")
 
-# আপনার দেওয়া ডিসকর্ড ওয়েহুক ইউআরএল
+# আপনার ডিসকর্ড ওয়েহুক ইউআরএল
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555088247137509379/YruglLjphIlnSc1718YSWF7mJnEiDJ-Zzc_7Gq01BTjX4LxFxCFZbCIKrv5A4dXAmkIP"
 
 def send_discord_alert(threat_type, client_ip, path):
@@ -110,7 +110,8 @@ def aegis_firewall_middleware():
     path = request.path
     user_agent = request.headers.get('User-Agent', '')
     
-    if path.startswith('/admin') or path.startswith('/client') or path == '/' or path == '/my-profile' or path.startswith('/proxy'):
+    # হোমপেজ চেক এখন সক্রিয়, কেবল এডমিন, ক্লায়েন্ট পোর্টাল ও প্রক্সি বাইপাস থাকবে
+    if path.startswith('/admin') or path.startswith('/client') or path == '/my-profile' or path.startswith('/proxy'):
         return
         
     if client_ip in BLOCKED_IPS:
