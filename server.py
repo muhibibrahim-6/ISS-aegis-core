@@ -4,12 +4,12 @@ import re
 import requests
 from urllib.parse import unquote
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "aegis_codespace_production_2026")
+app.secret_key = os.environ.get("SECRET_KEY", "aegis_complete_bot_api_2026")
 
-# আপনার নতুন ডিসকর্ড ওয়েহুক ইউআরএল (যেখানে প্রতিটি থ্রেটের সাথে লাইসেন্স কি যাবে)
+# আপনার ডিসকর্ড ওয়েহুক ইউআরএল
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555750516338856006/-riimewpBbXexc7WKO_2bl-7JCIDOsQTIORvEUs1dTNRqpi6A97ClD-D4rw73DGQITwR"
 
 def send_discord_alert(threat_type, client_ip, path, license_key):
@@ -24,7 +24,7 @@ def send_discord_alert(threat_type, client_ip, path, license_key):
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
                 {"name": "🔑 Client License Key", "value": f"`{license_key}`", "inline": False},
                 {"name": "📂 Target Website / Path", "value": str(path), "inline": False},
-                {"name": "⏱️ Time", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": False}
+                {"name": "⏱ Time", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": False}
             ]
         }]
     }
@@ -33,13 +33,26 @@ def send_discord_alert(threat_type, client_ip, path, license_key):
     except Exception:
         pass
 
-# স্ট্রাইক এবং ব্লক ট্র্যাকিং
+# নতুন এপিআই কি তৈরি হওয়ার সাথে সাথে ডিসকর্ডে শুধু এপিআই কি পাঠানোর ফাংশন
+def send_discord_new_apikey(api_key):
+    if not DISCORD_WEBHOOK_URL:
+        return
+    payload = {
+        "content": f"🔑 **New API Key Generated:** `{api_key}`"
+    }
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
+    except Exception:
+        pass
+
+# স্ট্রাইক, ব্লক এবং থ্রেট লগ ট্র্যাকিং ডিকশনারি
 strike_records = {}
 blocked_ips = {}
+THREAT_LOGS = [] 
 MAX_STRIKES = 4  
 BLOCK_TIME = 1800  # ৩০ মিনিট
 
-# রিয়েল ক্লায়েন্ট ডাটাবেজ (ওয়েবসাইট ইউআরএল বাইন্ডিং সহ)
+# ক্লায়েন্ট ডাটাবেজ
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -58,14 +71,13 @@ ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
 
-# --- ৩. ফায়ারওয়াল কার্যক্ষমতা (Client URL & License Binding WAF Engine) ---
+# --- ফায়ারওয়াল ইনসপেকশন ও লগ সেভিং ---
 @app.before_request
 def firewall_inspection():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     
-    # অ্যাডমিন বা ক্লায়েন্ট পোর্টালে ফায়ারওয়াল ব্লক করবে না
-    if request.path.startswith('/admin') or request.path.startswith('/client') or request.path == '/my-profile':
+    if request.path.startswith('/admin') or request.path.startswith('/client') or request.path == '/my-profile' or request.path.startswith('/api/'):
         return
 
     if client_ip in blocked_ips:
@@ -76,7 +88,6 @@ def firewall_inspection():
             if client_ip in strike_records:
                 del strike_records[client_ip]
 
-    # ১. ক্লায়েন্ট প্যানেলে নিবন্ধিত ওয়েবসাইট বা টার্গেটের সাথে বাইন্ডিং চেক
     target_param = request.args.get('target', '').lower()
     host_header = request.host.lower()
     
@@ -85,7 +96,6 @@ def firewall_inspection():
 
     for client in CUSTOMERS_DB:
         for u in client.get('urls', []):
-            # যদি রিকোয়েস্ট বা টার্গেটে ক্লায়েন্টের সেভ করা ইউআরএল থাকে
             clean_u = u.lower().replace('https://', '').replace('http://', '').strip('/')
             if clean_u in host_header or clean_u in target_param or host_header in clean_u:
                 matched_license_key = client['api_key']
@@ -94,7 +104,6 @@ def firewall_inspection():
         if is_protected_target:
             break
 
-    # স্ক্যানিং টার্গেট তৈরি
     raw_full_path = request.full_path
     decoded_url = unquote(raw_full_path)
     body_content = ""
@@ -124,26 +133,65 @@ def firewall_inspection():
         strike_records[client_ip] += 1
         current_strikes = strike_records[client_ip]
         
-        # ২. ডিসকর্ড মেসেজ: লাইসেন্স কি, পেলোড, আইপি এবং সময় সহ অ্যালার্ট পাঠানো
+        log_entry = {
+            "license_key": matched_license_key,
+            "threat_type": threat_name,
+            "attacker_ip": client_ip,
+            "path": decoded_url,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        THREAT_LOGS.append(log_entry)
+
         send_discord_alert(threat_name, client_ip, decoded_url, matched_license_key)
 
         if current_strikes >= MAX_STRIKES:
             blocked_ips[client_ip] = current_time + BLOCK_TIME
             return jsonify({"error": "Aegis WAF - IP Banned for 30 minutes!"}), 403
         else:
-            return jsonify({
-                "error": "Aegis WAF - Malicious Payload Blocked", 
-                "threat": threat_name, 
-                "license_key": matched_license_key,
-                "strikes": f"{current_strikes}/{MAX_STRIKES}"
-            }), 400
+            return jsonify({"error": "Aegis WAF - Malicious Payload Blocked", "threat": threat_name, "license_key": matched_license_key}), 400
+
+# --- Discord Bot API Endpoints ---
+@app.route('/api/report', methods=['GET'])
+def api_report():
+    license_key = request.args.get('license_key', '').strip()
+    if not license_key:
+        return jsonify({"error": "License key required"}), 400
+    
+    client = next((c for c in CUSTOMERS_DB if c['api_key'] == license_key), None)
+    if not client:
+        return jsonify({"error": "Invalid License Key"}), 404
+
+    client_logs = [log for log in THREAT_LOGS if log['license_key'] == license_key]
+    return jsonify({
+        "client_name": client['client_name'],
+        "license_key": license_key,
+        "recent_threats": client_logs[-5:]
+    })
+
+@app.route('/api/weekly_report', methods=['GET'])
+def api_weekly_report():
+    license_key = request.args.get('license_key', '').strip()
+    if not license_key:
+        return jsonify({"error": "License key required"}), 400
+    
+    client = next((c for c in CUSTOMERS_DB if c['api_key'] == license_key), None)
+    if not client:
+        return jsonify({"error": "Invalid License Key"}), 404
+
+    client_logs = [log for log in THREAT_LOGS if log['license_key'] == license_key]
+    return jsonify({
+        "client_name": client['client_name'],
+        "license_key": license_key,
+        "total_threats_this_week": len(client_logs),
+        "all_threats": client_logs
+    })
 
 # --- Reverse Proxy Route ---
 @app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def reverse_proxy():
     target = request.args.get('target', '').strip('/')
     if not target:
-        return jsonify({"error": "Invalid Proxy URL Format. Use /proxy?target=https://website.com/path"}), 400
+        return jsonify({"error": "Invalid Proxy URL Format"}), 400
         
     matched_client = None
     for c in CUSTOMERS_DB:
@@ -156,15 +204,14 @@ def reverse_proxy():
             break
 
     if not matched_client:
-        return jsonify({"error": "Target Website URL Not Registered in Firewall Database"}), 404
+        return jsonify({"error": "Target Website URL Not Registered"}), 404
         
     origin_url = matched_client['origin_ip']
-    
     try:
         req_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'accept-encoding']}
         resp = requests.request(
             method=request.method,
-            url=origin_url,
+            url=f"{origin_url.rstrip('/')}/{target.split('/', 1)[1] if '/' in target else ''}",
             headers=req_headers,
             data=request.get_data(),
             cookies=request.cookies,
@@ -177,100 +224,24 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Landing Page (Keeping all UI, images, plans, and social links intact) ---
+# --- Landing Page ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Aegis Core - Connected Web Application Firewall</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    </head>
-    <body class="bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
-        <nav class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fa-solid fa-shield-cat text-cyan-400 text-xl"></i>
-                <span class="font-bold text-lg tracking-wider text-cyan-400">AEGIS CORE WAF</span>
-            </div>
-            <div class="space-x-4">
-                <a href="#plans" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Pricing</a>
-                <a href="/client/login" class="text-xs text-slate-300 hover:text-cyan-400 font-medium transition">Client Login</a>
-                <a href="/my-profile" class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 font-bold px-4 py-2 rounded text-xs transition">Admin Portal</a>
-            </div>
-        </nav>
-
-        <header class="max-w-6xl mx-auto px-6 py-16 text-center space-y-6">
-            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Zero-Tolerance Connected Firewall Active</span>
-            <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-white">Ultimate Defense for Your <span class="text-cyan-400">Web Servers & Infrastructure</span></h1>
-            <p class="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">Protecting your website links and proxies from SQL Injections, XSS, and malicious payload threats in real-time.</p>
-        </header>
-
-        <section class="max-w-6xl mx-auto px-6 py-8 space-y-6 text-center">
-            <h2 class="text-2xl font-bold text-cyan-400">Security Infrastructure Overview</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl"><img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&auto=format&fit=crop&q=80" class="w-full h-40 object-cover rounded-lg border border-slate-800"></div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl"><img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80" class="w-full h-40 object-cover rounded-lg border border-slate-800"></div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl"><img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80" class="w-full h-40 object-cover rounded-lg border border-slate-800"></div>
-                <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl"><img src="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&auto=format&fit=crop&q=80" class="w-full h-40 object-cover rounded-lg border border-slate-800"></div>
-            </div>
-        </section>
-
-        <section id="plans" class="max-w-6xl mx-auto px-6 py-16 space-y-8">
-            <div class="text-center space-y-3">
-                <h2 class="text-3xl font-bold text-white">Choose Your <span class="text-cyan-400">Protection Plan</span></h2>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 flex flex-col justify-between">
-                    <div>
-                        <span class="text-xs bg-slate-800 text-cyan-400 px-3 py-1 rounded-full font-semibold">Standard</span>
-                        <h3 class="text-xl font-bold text-white mt-3">$19<span class="text-xs text-slate-400"> /mo</span></h3>
-                        <p class="text-xs text-slate-400 mt-2">1 Website Link Protected</p>
-                    </div>
-                    <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2 rounded text-xs transition">Get Standard</a>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 flex flex-col justify-between">
-                    <div>
-                        <span class="text-xs bg-slate-800 text-cyan-400 px-3 py-1 rounded-full font-semibold">Professional</span>
-                        <h3 class="text-xl font-bold text-white mt-3">$49<span class="text-xs text-slate-400"> /mo</span></h3>
-                        <p class="text-xs text-slate-400 mt-2">Up to 5 Website Links</p>
-                    </div>
-                    <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2 rounded text-xs transition">Get Professional</a>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 flex flex-col justify-between">
-                    <div>
-                        <span class="text-xs bg-slate-800 text-purple-400 px-3 py-1 rounded-full font-semibold">Enterprise</span>
-                        <h3 class="text-xl font-bold text-white mt-3">$99<span class="text-xs text-slate-400"> /mo</span></h3>
-                        <p class="text-xs text-slate-400 mt-2">Up to 10 Website Links</p>
-                    </div>
-                    <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2 rounded text-xs transition">Get Enterprise</a>
-                </div>
-                <div class="bg-slate-900 border border-cyan-500 p-6 rounded-2xl space-y-4 flex flex-col justify-between shadow-lg shadow-cyan-500/10">
-                    <div>
-                        <span class="text-xs bg-cyan-500/20 text-cyan-400 px-3 py-1 rounded-full font-semibold">Unlimited Plan</span>
-                        <h3 class="text-xl font-bold text-white mt-3">$199<span class="text-xs text-slate-400"> /mo</span></h3>
-                        <p class="text-xs text-slate-400 mt-2">Unlimited Website Links with Dynamic Add New Support</p>
-                    </div>
-                    <a href="/client/login" class="w-full block text-center bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2 rounded text-xs transition">Get Unlimited</a>
-                </div>
-            </div>
-        </section>
-
-        <footer class="border-t border-slate-800 py-10 bg-slate-900/40 text-center space-y-4">
-            <div class="flex justify-center space-x-6 text-slate-400 text-lg">
-                <a href="https://instagram.com/mrshadow6000" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-instagram"></i></a>
-                <a href="https://discord.gg/mxRgm2R3ud" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-discord"></i></a>
-                <a href="https://linkedin.com" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-linkedin"></i></a>
-            </div>
-            <p class="text-xs text-slate-500">&copy; 2026 Aegis Core WAF Security System. All rights reserved.</p>
-        </footer>
+    <head><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-slate-950 text-slate-100 font-sans p-10 text-center space-y-4">
+        <h1 class="text-3xl font-bold text-cyan-400">Aegis Core WAF & API Server Active</h1>
+        <p class="text-sm text-slate-400">Connected with Discord Bot API Endpoints & Auto API Key Notifier</p>
+        <div>
+            <a href="/client/login" class="bg-cyan-500 text-slate-950 px-4 py-2 rounded text-xs font-bold">Client Login</a>
+            <a href="/my-profile" class="bg-slate-800 text-cyan-400 px-4 py-2 rounded text-xs font-bold ml-2">Admin Portal</a>
+        </div>
     </body>
     </html>
     """)
 
-# --- Admin Portal & Dashboard ---
 @app.route('/my-profile', methods=['GET', 'POST'])
 def my_profile():
     error = None
@@ -282,7 +253,7 @@ def my_profile():
             session['is_admin'] = True
             return redirect(url_for('admin_dashboard'))
         else:
-            error = "Invalid Master Credentials"
+            error = "Invalid Credentials"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en"><head><script src="https://cdn.tailwindcss.com"></script></head>
@@ -290,7 +261,7 @@ def my_profile():
         <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl w-96 space-y-4 shadow-2xl">
             <h2 class="text-xl font-bold text-cyan-400 text-center">Admin Portal</h2>
             {% if error %}<p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>{% endif %}
-            <input type="text" name="username" placeholder="Username or Email" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
+            <input type="text" name="username" placeholder="Username" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
             <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
             <button type="submit" class="w-full bg-cyan-500 text-slate-950 font-bold p-3 rounded text-sm">Login</button>
         </form>
@@ -302,6 +273,7 @@ def admin_dashboard():
     if not session.get('is_admin'): return redirect(url_for('my_profile'))
     global CUSTOMERS_DB
     success_msg = None
+    
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'delete':
@@ -310,8 +282,9 @@ def admin_dashboard():
             success_msg = "Client deleted!"
         elif action == 'create':
             try:
+                new_api_key = request.form.get('api_key')
                 new_client = {
-                    "api_key": request.form.get('api_key'),
+                    "api_key": new_api_key,
                     "username": request.form.get('username'),
                     "email": request.form.get('email'),
                     "password": request.form.get('password'),
@@ -322,13 +295,18 @@ def admin_dashboard():
                     "expiry_date": request.form.get('expiry_date')
                 }
                 CUSTOMERS_DB.append(new_client)
-                success_msg = "Client created with website URL binding!"
+                
+                # নতুন এপিআই তৈরি হওয়ার সাথে সাথে ডিসকর্ডে শুধু এপিআই কি পাঠানো
+                send_discord_new_apikey(new_api_key)
+                
+                success_msg = "Client created and API Key sent to Discord!"
             except Exception:
                 pass
+
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en"><head><script src="https://cdn.tailwindcss.com"></script></head>
-    <body class="bg-slate-950 text-slate-100 p-6 space-y-6 font-sans">
+    <body class="bg-slate-950 text-slate-100 p-6 space-y-6">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center rounded-xl">
             <h1 class="font-bold text-cyan-400">ADMIN DASHBOARD</h1>
             <a href="/my-profile?logout=true" class="text-xs text-red-400">Logout</a>
@@ -336,145 +314,42 @@ def admin_dashboard():
         <main class="max-w-6xl mx-auto space-y-6">
             {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-3 rounded text-xs">{{ success_msg }}</div>{% endif %}
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-sm font-bold text-cyan-400">Add New Client License (Website Link Based)</h2>
+                <h2 class="text-sm font-bold text-cyan-400">Add New Client License</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <input type="hidden" name="action" value="create">
-                    <input type="text" name="client_name" placeholder="Server Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="username" placeholder="Username" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="email" name="email" placeholder="Email" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="password" name="password" placeholder="Password" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="url" placeholder="Website Link (e.g. https://site.com)" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="api_key" placeholder="API Key / License Key" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
-                    <input type="text" name="origin_ip" placeholder="Origin URL" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
+                    <input type="text" name="client_name" placeholder="Server Name" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="text" name="username" placeholder="Username" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="email" name="email" placeholder="Email" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="password" name="password" placeholder="Password" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="text" name="url" placeholder="Website Link" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="text" name="api_key" placeholder="API Key (Unique)" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
+                    <input type="text" name="origin_ip" placeholder="Origin URL" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs">
                     <input type="date" name="expiry_date" required class="bg-slate-950 border border-slate-800 p-2 rounded text-xs text-slate-200">
-                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs md:col-span-3">
+                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2 rounded text-xs md:col-span-3">
                         <option value="Standard">Standard</option>
                         <option value="Professional">Professional</option>
                         <option value="Enterprise">Enterprise</option>
-                        <option value="Unlimited">Unlimited (Dynamic URL Slots)</option>
+                        <option value="Unlimited">Unlimited</option>
                     </select>
-                    <button type="submit" class="md:col-span-4 bg-cyan-500 text-slate-950 font-bold p-2.5 rounded text-xs">Create Client</button>
+                    <button type="submit" class="md:col-span-4 bg-cyan-500 text-slate-950 font-bold p-2.5 rounded text-xs">Create Client & Notify Discord</button>
                 </form>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-sm font-bold text-cyan-400">Registered Clients</h2>
-                <div class="space-y-2">
-                    {% for client in customers %}
-                    <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex justify-between items-center text-xs">
-                        <div>
-                            <p class="font-bold text-white">{{ client.client_name }} (<span class="text-cyan-400">{{ client.username }}</span>)</p>
-                            <p class="text-slate-400">Links: {{ client.urls | join(', ') }} | Plan: {{ client.plan }} | Key: <code class="text-cyan-300">{{ client.api_key }}</code></p>
-                        </div>
-                        <form method="POST" onsubmit="return confirm('Delete?');">
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="api_key" value="{{ client.api_key }}">
-                            <button type="submit" class="bg-red-500/10 text-red-400 px-3 py-1.5 rounded">Delete</button>
-                        </form>
-                    </div>
-                    {% endfor %}
-                </div>
             </div>
         </main>
     </body></html>
-    """, success_msg=success_msg, customers=CUSTOMERS_DB)
+    """, success_msg=success_msg)
 
-# --- Client Login & Dashboard (With Dynamic Add New URL slots for Unlimited plan) ---
 @app.route('/client/login', methods=['GET', 'POST'])
 def client_login():
-    error = None
-    if request.method == 'POST':
-        identity = request.form.get('identity')
-        password = request.form.get('password')
-        client = next((c for c in CUSTOMERS_DB if (c['username'] == identity or c['email'] == identity or c['api_key'] == identity) and c['password'] == password), None)
-        if client:
-            session['client_username'] = client['username']
-            return redirect(url_for('client_dashboard'))
-        else:
-            error = "Invalid Credentials"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en"><head><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-slate-950 text-slate-100 flex items-center justify-center h-screen">
-        <form method="POST" class="bg-slate-900 border border-slate-800 p-8 rounded-xl w-96 space-y-4 shadow-2xl">
-            <h2 class="text-xl font-bold text-cyan-400 text-center">Client Portal Login</h2>
-            {% if error %}<p class="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded">{{ error }}</p>{% endif %}
-            <input type="text" name="identity" placeholder="Username, Email or API Key" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
-            <input type="password" name="password" placeholder="Password" required class="w-full bg-slate-950 border border-slate-800 p-3 rounded text-sm">
-            <button type="submit" class="w-full bg-cyan-500 text-slate-950 font-bold p-3 rounded text-sm">Login</button>
-        </form>
+        <div class="bg-slate-900 p-6 rounded text-center space-y-2">
+            <h2 class="text-cyan-400 font-bold">Client Portal</h2>
+            <a href="/" class="text-xs text-cyan-300 underline">Home</a>
+        </div>
     </body></html>
-    """, error=error)
-
-@app.route('/client/dashboard', methods=['GET', 'POST'])
-def client_dashboard():
-    username = session.get('client_username')
-    if not username: return redirect(url_for('client_login'))
-    current_client = next((c for c in CUSTOMERS_DB if c['username'] == username), None)
-    if not current_client: return redirect(url_for('client_login'))
-    
-    success_msg = None
-    if request.method == 'POST':
-        urls = request.form.getlist('website_urls')
-        current_client['urls'] = [u.strip() for u in urls if u.strip()]
-        success_msg = "Website links updated and firewall protection bound instantly!"
-
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script>
-            function addUrlField() {
-                const container = document.getElementById('url-container');
-                const div = document.createElement('div');
-                div.className = "flex gap-2 items-center";
-                div.innerHTML = `<input type="text" name="website_urls" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200"><button type="button" onclick="this.parentElement.remove()" class="bg-red-500/20 text-red-400 px-3 py-2 rounded text-xs">Remove</button>`;
-                container.appendChild(div);
-            }
-        </script>
-    </head>
-    <body class="bg-slate-950 text-slate-100 font-sans p-6 space-y-6">
-        <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center rounded-xl">
-            <h1 class="font-bold text-cyan-400">CLIENT PORTAL ({{ client.client_name }})</h1>
-            <a href="/client/logout" class="text-xs text-red-400">Logout</a>
-        </nav>
-        <main class="max-w-4xl mx-auto space-y-6">
-            {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-3 rounded text-xs">{{ success_msg }}</div>{% endif %}
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-sm font-bold text-cyan-400">Configure Protected Website Links (Plan: {{ client.plan }})</h2>
-                    <span class="text-xs text-slate-400">License Key: <code class="text-cyan-300 font-mono">{{ client.api_key }}</code></span>
-                </div>
-                <form method="POST" class="space-y-4">
-                    <div id="url-container" class="space-y-3">
-                        {% if client.urls %}
-                            {% for url in client.urls %}
-                            <div class="flex gap-2 items-center">
-                                <input type="text" name="website_urls" value="{{ url }}" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
-                                <button type="button" onclick="this.parentElement.remove()" class="bg-red-500/20 text-red-400 px-3 py-2 rounded text-xs">Remove</button>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="flex gap-2 items-center">
-                                <input type="text" name="website_urls" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
-                            </div>
-                        {% endif %}
-                    </div>
-                    {% if client.plan == 'Unlimited' %}
-                    <button type="button" onclick="addUrlField()" class="bg-slate-800 text-cyan-400 px-4 py-2 rounded text-xs font-bold">+ Add New Website Link</button>
-                    {% endif %}
-                    <br>
-                    <button type="submit" class="bg-cyan-500 text-slate-950 font-bold px-6 py-2 rounded text-xs">Save & Bind Firewall</button>
-                </form>
-            </div>
-        </main>
-    </body></html>
-    """, client=current_client, success_msg=success_msg)
-
-@app.route('/client/logout')
-def client_logout():
-    session.pop('client_username', None)
-    return redirect(url_for('client_login'))
+    """)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
