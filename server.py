@@ -4,12 +4,12 @@ import re
 import requests
 from urllib.parse import unquote
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "aegis_final_production_2026")
+app.secret_key = os.environ.get("SECRET_KEY", "aegis_codespace_production_2026")
 
-# আপনার নতুন ডিসকর্ড ওয়েহুক ইউআরএল এখানে আপডেট করা হলো
+# আপনার নতুন ডিসকর্ড ওয়েহুক ইউআরএল (যেখানে প্রতিটি থ্রেটের সাথে লাইসেন্স কি যাবে)
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555750516338856006/-riimewpBbXexc7WKO_2bl-7JCIDOsQTIORvEUs1dTNRqpi6A97ClD-D4rw73DGQITwR"
 
 def send_discord_alert(threat_type, client_ip, path, license_key):
@@ -23,7 +23,7 @@ def send_discord_alert(threat_type, client_ip, path, license_key):
                 {"name": "🛡️ Threat / Payload", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
                 {"name": "🔑 Client License Key", "value": f"`{license_key}`", "inline": False},
-                {"name": "📂 Target Website URL", "value": str(path), "inline": False},
+                {"name": "📂 Target Website / Path", "value": str(path), "inline": False},
                 {"name": "⏱️ Time", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": False}
             ]
         }]
@@ -39,7 +39,7 @@ blocked_ips = {}
 MAX_STRIKES = 4  
 BLOCK_TIME = 1800  # ৩০ মিনিট
 
-# রিয়েল ক্লায়েন্ট ডাটাবেজ (এখানে 'domains' এর বদলে 'urls' ব্যবহার করা হয়েছে)
+# রিয়েল ক্লায়েন্ট ডাটাবেজ (ওয়েবসাইট ইউআরএল বাইন্ডিং সহ)
 CUSTOMERS_DB = [
     {
         "api_key": "aegis_live_key_999",
@@ -58,12 +58,13 @@ ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
 
-# --- WAF Engine with Direct URL & License Binding ---
+# --- ৩. ফায়ারওয়াল কার্যক্ষমতা (Client URL & License Binding WAF Engine) ---
 @app.before_request
 def firewall_inspection():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     
+    # অ্যাডমিন বা ক্লায়েন্ট পোর্টালে ফায়ারওয়াল ব্লক করবে না
     if request.path.startswith('/admin') or request.path.startswith('/client') or request.path == '/my-profile':
         return
 
@@ -75,17 +76,25 @@ def firewall_inspection():
             if client_ip in strike_records:
                 del strike_records[client_ip]
 
-    # কোন ক্লায়েন্টের ওয়েবসাইটের লিংকের সাথে রিকোয়েস্ট মিলেছে তা ট্র্যাক করা
+    # ১. ক্লায়েন্ট প্যানেলে নিবন্ধিত ওয়েবসাইট বা টার্গেটের সাথে বাইন্ডিং চেক
     target_param = request.args.get('target', '').lower()
     host_header = request.host.lower()
     
-    matched_license_key = "aegis_live_key_999" # ডিফল্ট
+    matched_license_key = "aegis_live_key_999"
+    is_protected_target = False
+
     for client in CUSTOMERS_DB:
         for u in client.get('urls', []):
-            if host_header in u.lower() or u.lower() in target_param:
+            # যদি রিকোয়েস্ট বা টার্গেটে ক্লায়েন্টের সেভ করা ইউআরএল থাকে
+            clean_u = u.lower().replace('https://', '').replace('http://', '').strip('/')
+            if clean_u in host_header or clean_u in target_param or host_header in clean_u:
                 matched_license_key = client['api_key']
+                is_protected_target = True
                 break
+        if is_protected_target:
+            break
 
+    # স্ক্যানিং টার্গেট তৈরি
     raw_full_path = request.full_path
     decoded_url = unquote(raw_full_path)
     body_content = ""
@@ -115,14 +124,19 @@ def firewall_inspection():
         strike_records[client_ip] += 1
         current_strikes = strike_records[client_ip]
         
-        # ডিসকর্ডে লাইসেন্স কি সহ অ্যালার্ট পাঠানো
+        # ২. ডিসকর্ড মেসেজ: লাইসেন্স কি, পেলোড, আইপি এবং সময় সহ অ্যালার্ট পাঠানো
         send_discord_alert(threat_name, client_ip, decoded_url, matched_license_key)
 
         if current_strikes >= MAX_STRIKES:
             blocked_ips[client_ip] = current_time + BLOCK_TIME
             return jsonify({"error": "Aegis WAF - IP Banned for 30 minutes!"}), 403
         else:
-            return jsonify({"error": "Aegis WAF - Malicious Payload Blocked", "threat": threat_name, "license_key": matched_license_key}), 400
+            return jsonify({
+                "error": "Aegis WAF - Malicious Payload Blocked", 
+                "threat": threat_name, 
+                "license_key": matched_license_key,
+                "strikes": f"{current_strikes}/{MAX_STRIKES}"
+            }), 400
 
 # --- Reverse Proxy Route ---
 @app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
@@ -133,8 +147,12 @@ def reverse_proxy():
         
     matched_client = None
     for c in CUSTOMERS_DB:
-        if any(target.lower().startswith(u.lower().replace('https://', '').replace('http://', '')) for u in c.get('urls', [])):
-            matched_client = c
+        for u in c.get('urls', []):
+            clean_u = u.lower().replace('https://', '').replace('http://', '').strip('/')
+            if clean_u in target.lower():
+                matched_client = c
+                break
+        if matched_client:
             break
 
     if not matched_client:
@@ -159,7 +177,7 @@ def reverse_proxy():
     except Exception as e:
         return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
 
-# --- Complete Landing Page (Keeping all images, plans, and social links intact) ---
+# --- Landing Page (Keeping all UI, images, plans, and social links intact) ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
@@ -229,7 +247,6 @@ def landing_page():
                     </div>
                     <a href="/client/login" class="w-full block text-center bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 font-bold py-2 rounded text-xs transition">Get Enterprise</a>
                 </div>
-                <!-- নতুন আনলিমিটেড প্ল্যান -->
                 <div class="bg-slate-900 border border-cyan-500 p-6 rounded-2xl space-y-4 flex flex-col justify-between shadow-lg shadow-cyan-500/10">
                     <div>
                         <span class="text-xs bg-cyan-500/20 text-cyan-400 px-3 py-1 rounded-full font-semibold">Unlimited Plan</span>
@@ -397,7 +414,6 @@ def client_dashboard():
     
     success_msg = None
     if request.method == 'POST':
-        # ডায়নামিক ফর্ম থেকে আসা সব ওয়েবসাইট লিংক সংগ্রহ করা
         urls = request.form.getlist('website_urls')
         current_client['urls'] = [u.strip() for u in urls if u.strip()]
         success_msg = "Website links updated and firewall protection bound instantly!"
