@@ -4,7 +4,7 @@ import re
 import requests
 from urllib.parse import unquote
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for, session
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_bulletproof_production_2026")
@@ -12,18 +12,19 @@ app.secret_key = os.environ.get("SECRET_KEY", "aegis_bulletproof_production_2026
 # ডিসকর্ড ওয়েহুক ইউআরএল
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555750516338856006/-riimewpBbXexc7WKO_2bl-7JCIDOsQTIORvEUs1dTNRqpi6A97ClD-D4rw73DGQITwR"
 
-def send_discord_alert(threat_type, client_ip, path, license_key):
+def send_discord_alert(threat_type, client_ip, path, license_key, action_taken):
     if not DISCORD_WEBHOOK_URL:
         return
     payload = {
         "embeds": [{
-            "title": "🚨 Aegis WAF - Threat Blocked & Logged",
-            "color": 16711680,
+            "title": f"🚨 Aegis WAF Alert - [{action_taken}]",
+            "color": 16711680 if "Banned" in action_taken else 16776960,
             "fields": [
-                {"name": "🛡️ Threat / Payload", "value": str(threat_type), "inline": True},
+                {"name": "🛡️ Threat Detected", "value": str(threat_type), "inline": True},
                 {"name": "🌐 Attacker IP", "value": str(client_ip), "inline": True},
-                {"name": "🔑 Client License Key", "value": f"`{license_key}`", "inline": False},
-                {"name": "📂 Target Website / Path", "value": str(path), "inline": False},
+                {"name": "⚙️ Action Status", "value": str(action_taken), "inline": False},
+                {"name": "🔑 License Key", "value": f"`{license_key}`", "inline": False},
+                {"name": "📂 Target Path", "value": str(path), "inline": False},
                 {"name": "⏱ Time", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "inline": False}
             ]
         }]
@@ -48,7 +49,7 @@ def send_discord_new_apikey(api_key):
 strike_records = {}
 blocked_ips = {}
 THREAT_LOGS = [] 
-MAX_STRIKES = 3  
+MAX_STRIKES = 4  # ৪ বার আক্রমণ হলে তবেই ব্লক
 BLOCK_TIME = 1800  # ৩০ মিনিট
 
 CUSTOMERS_DB = [
@@ -69,19 +70,18 @@ ADMIN_USER = "ibr@him"
 ADMIN_EMAIL = "admin@firewall.com"
 ADMIN_PASS = "muhib5869@"
 
-# --- উন্নত ফায়ারওয়াল সিকিউরিটি ইঞ্জিন ---
+# --- ফায়ারওয়াল লজিক: শুরুতে ব্লক নয়, শুধু ডিসকর্ডে নোটিফিকেশন ---
 @app.before_request
 def firewall_inspection():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     current_time = time.time()
     
-    # অ্যাডমিন, ক্লায়েন্ট প্যানেল এবং এপিআই রিকোয়েস্ট বাইপাস
     if request.path.startswith('/admin') or request.path.startswith('/client') or request.path == '/my-profile' or request.path.startswith('/api/'):
         return
 
     if client_ip in blocked_ips:
         if current_time < blocked_ips[client_ip]:
-            return jsonify({"error": "Aegis WAF - IP Banned due to security violations."}), 403
+            return jsonify({"error": "Aegis WAF - IP Banned due to repeated security violations."}), 403
         else:
             del blocked_ips[client_ip]
             if client_ip in strike_records:
@@ -144,18 +144,14 @@ def firewall_inspection():
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         THREAT_LOGS.append(log_entry)
-        send_discord_alert(threat_name, client_ip, decoded_url, matched_license_key)
 
         if current_strikes >= MAX_STRIKES:
             blocked_ips[client_ip] = current_time + BLOCK_TIME
-            return jsonify({"error": "Aegis WAF - IP Banned for 30 minutes!"}), 403
+            send_discord_alert(threat_name, client_ip, decoded_url, matched_license_key, f"IP Banned ({current_strikes}/{MAX_STRIKES} Strikes)")
+            return jsonify({"error": "Aegis WAF - IP Banned due to continuous attacks!"}), 403
         else:
-            return jsonify({
-                "error": "Aegis WAF - Malicious Payload Blocked", 
-                "threat": threat_name, 
-                "license_key": matched_license_key,
-                "strikes": f"{current_strikes}/{MAX_STRIKES}"
-            }), 400
+            send_discord_alert(threat_name, client_ip, decoded_url, matched_license_key, f"Threat Logged (Strike {current_strikes}/{MAX_STRIKES}) - Allowed")
+            return
 
 # --- ডিসকর্ড বট এপিআই এন্ডপয়েন্ট ---
 @app.route('/api/report', methods=['GET'])
@@ -187,48 +183,16 @@ def api_weekly_report():
         "all_threats": client_logs
     })
 
-# --- রিভার্স প্রক্সি ---
-@app.route('/proxy', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-def reverse_proxy():
-    target = request.args.get('target', '').strip('/')
-    if not target: return jsonify({"error": "Invalid Proxy URL Format"}), 400
-        
-    matched_client = None
-    for c in CUSTOMERS_DB:
-        for u in c.get('urls', []):
-            clean_u = u.lower().replace('https://', '').replace('http://', '').strip('/')
-            if clean_u in target.lower():
-                matched_client = c
-                break
-        if matched_client: break
-
-    if not matched_client: return jsonify({"error": "Target Website URL Not Registered"}), 404
-        
-    origin_url = matched_client['origin_ip']
-    try:
-        req_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'accept-encoding']}
-        resp = requests.request(
-            method=request.method,
-            url=origin_url,
-            headers=req_headers,
-            data=request.get_data(),
-            cookies=request.cookies,
-            allow_redirects=False,
-            timeout=15
-        )
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded_headers]
-        return Response(resp.content, resp.status_code, headers)
-    except Exception as e:
-        return jsonify({"error": "Origin Server Unreachable", "details": str(e)}), 502
-
-# --- 랜딩 পেজ ---
+# --- 랜딩 পেজ (সোশ্যাল লিংক ও ফুটারসহ) ---
 @app.route('/')
 def landing_page():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head><script src="https://cdn.tailwindcss.com"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"></head>
+    <head>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
     <body class="bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
         <nav class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-2"><i class="fa-solid fa-shield-cat text-cyan-400 text-xl"></i><span class="font-bold text-lg text-cyan-400">AEGIS CORE WAF</span></div>
@@ -238,10 +202,20 @@ def landing_page():
             </div>
         </nav>
         <header class="max-w-4xl mx-auto px-6 py-20 text-center space-y-6">
-            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Zero-Tolerance Protected System</span>
-            <h1 class="text-4xl md:text-6xl font-extrabold text-white">Next-Gen <span class="text-cyan-400">Web Security Firewall</span></h1>
-            <p class="text-slate-400 text-sm max-w-xl mx-auto">Real-time threat detection, automated IP blocking, and Discord webhook integration active.</p>
+            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1 rounded-full uppercase tracking-widest font-semibold">Real-Time Notification & Protection</span>
+            <h1 class="text-4xl md:text-6xl font-extrabold text-white">Next-Gen <span class="text-cyan-400">Security Firewall & Analytics</span></h1>
+            <p class="text-slate-400 text-sm max-w-xl mx-auto">Automated Discord alerts, multi-tier protection plans, and client management system.</p>
         </header>
+
+        <!-- ফুটার ও সোশ্যাল লিংক -->
+        <footer class="border-t border-slate-800 bg-slate-900/50 py-8 text-center text-xs text-slate-400 space-y-4">
+            <div class="flex justify-center space-x-6 text-lg">
+                <a href="https://discord.com" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-discord"></i></a>
+                <a href="https://github.com" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-github"></i></a>
+                <a href="https://linkedin.com" target="_blank" class="hover:text-cyan-400"><i class="fa-brands fa-linkedin"></i></a>
+            </div>
+            <p>&copy; 2026 ISS Enterprise & Cloud Security. All rights reserved.</p>
+        </footer>
     </body>
     </html>
     """)
@@ -306,7 +280,7 @@ def admin_dashboard():
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en"><head><script src="https://cdn.tailwindcss.com"></script></head>
-    <body class="bg-slate-950 text-slate-100 p-6 space-y-6 font-sans">
+    <body class="bg-slate-950 text-slate-100 p-6 space-y-6">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center rounded-xl">
             <h1 class="font-bold text-cyan-400">ADMIN CONTROL CENTER</h1>
             <a href="/my-profile?logout=true" class="text-xs text-red-400">Logout</a>
@@ -314,7 +288,7 @@ def admin_dashboard():
         <main class="max-w-6xl mx-auto space-y-6">
             {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-3 rounded text-xs">{{ success_msg }}</div>{% endif %}
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
-                <h2 class="text-sm font-bold text-cyan-400">Add New Client License Key</h2>
+                <h2 class="text-sm font-bold text-cyan-400">Add New Client License Key & Select Plan</h2>
                 <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <input type="hidden" name="action" value="create">
                     <input type="text" name="client_name" placeholder="Client Name" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
@@ -325,11 +299,13 @@ def admin_dashboard():
                     <input type="text" name="api_key" placeholder="Unique API / License Key" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="text" name="origin_ip" placeholder="Origin Server URL" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs">
                     <input type="date" name="expiry_date" required class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
-                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs md:col-span-3">
-                        <option value="Standard">Standard</option>
-                        <option value="Professional">Professional</option>
-                        <option value="Enterprise">Enterprise</option>
-                        <option value="Unlimited">Unlimited (Dynamic URL Slots)</option>
+                    
+                    <!-- প্রিমিয়াম প্ল্যান সিলেকশন অপশন -->
+                    <select name="plan" class="bg-slate-950 border border-slate-800 p-2.5 rounded text-xs md:col-span-3 text-cyan-300 font-semibold">
+                        <option value="Standard">Standard Plan</option>
+                        <option value="Professional">Professional Plan</option>
+                        <option value="Enterprise">Enterprise Plan</option>
+                        <option value="Unlimited">Unlimited / VIP Premium Plan</option>
                     </select>
                     <button type="submit" class="md:col-span-4 bg-cyan-500 text-slate-950 font-bold p-2.5 rounded text-xs">Generate & Notify Discord</button>
                 </form>
@@ -341,7 +317,7 @@ def admin_dashboard():
                     <div class="bg-slate-950 border border-slate-800 p-3 rounded-lg flex justify-between items-center text-xs">
                         <div>
                             <p class="font-bold text-white">{{ client.client_name }} (<span class="text-cyan-400">{{ client.username }}</span>)</p>
-                            <p class="text-slate-400">URLs: {{ client.urls | join(', ') }} | Plan: {{ client.plan }} | Key: <code class="text-cyan-300">{{ client.api_key }}</code></p>
+                            <p class="text-slate-400">URLs: {{ client.urls | join(', ') }} | Plan: <span class="text-yellow-400 font-bold">{{ client.plan }}</span> | Key: <code class="text-cyan-300">{{ client.api_key }}</code></p>
                         </div>
                         <form method="POST" onsubmit="return confirm('Delete this client?');">
                             <input type="hidden" name="action" value="delete">
@@ -393,24 +369,13 @@ def client_dashboard():
     if request.method == 'POST':
         urls = request.form.getlist('website_urls')
         current_client['urls'] = [u.strip() for u in urls if u.strip()]
-        success_msg = "Website URLs updated and firewall bound successfully!"
+        success_msg = "Website URLs and Plan Settings updated successfully!"
 
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script>
-            function addUrlField() {
-                const container = document.getElementById('url-container');
-                const div = document.createElement('div');
-                div.className = "flex gap-2 items-center";
-                div.innerHTML = `<input type="text" name="website_urls" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200"><button type="button" onclick="this.parentElement.remove()" class="bg-red-500/20 text-red-400 px-3 py-2 rounded text-xs">Remove</button>`;
-                container.appendChild(div);
-            }
-        </script>
-    </head>
-    <body class="bg-slate-950 text-slate-100 font-sans p-6 space-y-6">
+    <head><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-slate-950 text-slate-100 p-6 space-y-6">
         <nav class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center rounded-xl">
             <h1 class="font-bold text-cyan-400">CLIENT DASHBOARD ({{ client.client_name }})</h1>
             <a href="/client/logout" class="text-xs text-red-400">Logout</a>
@@ -419,29 +384,15 @@ def client_dashboard():
             {% if success_msg %}<div class="bg-emerald-500/10 text-emerald-400 p-3 rounded text-xs">{{ success_msg }}</div>{% endif %}
             <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
                 <div class="flex justify-between items-center">
-                    <h2 class="text-sm font-bold text-cyan-400">Configure Protected Website Links (Plan: {{ client.plan }})</h2>
-                    <span class="text-xs text-slate-400">License Key: <code class="text-cyan-300 font-mono">{{ client.api_key }}</code></span>
+                    <h2 class="text-sm font-bold text-cyan-400">Active Subscription Plan: <span class="text-yellow-400">{{ client.plan }}</span></h2>
+                    <span class="text-xs text-slate-400">Key: <code class="text-cyan-300 font-mono">{{ client.api_key }}</code></span>
                 </div>
                 <form method="POST" class="space-y-4">
-                    <div id="url-container" class="space-y-3">
-                        {% if client.urls %}
-                            {% for url in client.urls %}
-                            <div class="flex gap-2 items-center">
-                                <input type="text" name="website_urls" value="{{ url }}" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
-                                <button type="button" onclick="this.parentElement.remove()" class="bg-red-500/20 text-red-400 px-3 py-2 rounded text-xs">Remove</button>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="flex gap-2 items-center">
-                                <input type="text" name="website_urls" placeholder="https://mywebsite.com" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
-                            </div>
-                        {% endif %}
-                    </div>
-                    {% if client.plan == 'Unlimited' %}
-                    <button type="button" onclick="addUrlField()" class="bg-slate-800 text-cyan-400 px-4 py-2 rounded text-xs font-bold">+ Add New Website Link</button>
-                    {% endif %}
-                    <br>
-                    <button type="submit" class="bg-cyan-500 text-slate-950 font-bold px-6 py-2 rounded text-xs">Save & Bind Firewall</button>
+                    <label class="text-xs text-slate-400 block">Protected Website URLs:</label>
+                    {% for url in client.urls %}
+                    <input type="text" name="website_urls" value="{{ url }}" required class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded text-xs text-slate-200">
+                    {% endfor %}
+                    <button type="submit" class="bg-cyan-500 text-slate-950 font-bold px-6 py-2 rounded text-xs">Save Changes</button>
                 </form>
             </div>
         </main>
