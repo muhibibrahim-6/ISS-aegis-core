@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "aegis_final_production_2026")
 
-# আপনার ডিসকর্ড ওয়েহুক ইউআরএল (যেখানে প্রতিটি থ্রেটের সাথে লাইসেন্স কি যাবে)
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555088247137509379/YruglLjphIlnSc1718YSWF7mJnEiDJ-Zzc_7Gq01BTjX4LxFxCFZbCIKrv5A4dXAmkIP"
+# আপনার নতুন ডিসকর্ড ওয়েহুক ইউআরএল এখানে আপডেট করা হলো
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1555750516338856006/-riimewpBbXexc7WKO_2bl-7JCIDOsQTIORvEUs1dTNRqpi6A97ClD-D4rw73DGQITwR"
 
 def send_discord_alert(threat_type, client_ip, path, license_key):
     if not DISCORD_WEBHOOK_URL:
